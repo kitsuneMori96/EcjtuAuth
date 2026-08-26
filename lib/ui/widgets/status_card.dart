@@ -10,7 +10,6 @@ class StatusCard extends StatelessWidget {
     required this.ssid,
     required this.busy,
     this.onConnect,
-    this.onLogout,
     this.onRefresh,
   });
 
@@ -18,7 +17,6 @@ class StatusCard extends StatelessWidget {
   final String? ssid;
   final bool busy;
   final VoidCallback? onConnect;
-  final VoidCallback? onLogout;
   final VoidCallback? onRefresh;
 
   @override
@@ -105,14 +103,6 @@ class StatusCard extends StatelessWidget {
                   icon: const Icon(Icons.refresh_rounded),
                   label: const Text('刷新状态'),
                 ),
-              if (state == NetState.online && onLogout != null) ...[
-                const SizedBox(height: 8),
-                TextButton.icon(
-                  onPressed: onLogout,
-                  icon: const Icon(Icons.logout_rounded, size: 18),
-                  label: const Text('注销校园网'),
-                ),
-              ],
             ],
           ],
         ),

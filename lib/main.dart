@@ -4,7 +4,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'core/app_config.dart';
 import 'core/eportal_client.dart';
 import 'core/network_checker.dart';
-import 'models/net_state.dart';
 import 'platform/desktop_service.dart';
 import 'services/auto_connect.dart';
 import 'services/credential_store.dart';
@@ -105,25 +104,11 @@ class _HomeShellState extends State<HomeShell> {
       appBar: AppBar(
         title: const Text('AuinEcjtuWifi', style: TextStyle(fontWeight: FontWeight.bold)),
         actions: [
-          Builder(
-            builder: (btnContext) => IconButton(
-              tooltip: '手动检测',
-              icon: const Icon(Icons.wifi_find_rounded),
-              onPressed: widget.service.busy
-                  ? null
-                  : () async {
-                      final messenger = ScaffoldMessenger.of(btnContext);
-                      final s = await widget.service.refreshState();
-                      if (!btnContext.mounted) return;
-                      messenger.showSnackBar(
-                        SnackBar(
-                          content: Text('当前状态：${s.label}'),
-                          duration: const Duration(seconds: 2),
-                          behavior: SnackBarBehavior.floating,
-                        ),
-                      );
-                    },
-            ),
+          IconButton(
+            tooltip: '手动检测',
+            icon: const Icon(Icons.wifi_find_rounded),
+            onPressed:
+                widget.service.busy ? null : () => widget.service.refreshState(),
           ),
         ],
       ),
