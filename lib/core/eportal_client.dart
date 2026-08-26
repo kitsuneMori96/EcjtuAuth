@@ -99,8 +99,8 @@ class EportalClient {
     };
   }
 
-  /// 发起登录请求。返回是否得到 HTTP 200（不代表认证成功）。
-  Future<bool> postLogin({
+  /// 发起登录请求。返回 (httpOk, detail)。
+  Future<(bool, String)> postLogin({
     required String username,
     required String password,
     Operator operator = Operator.campus,
@@ -111,6 +111,7 @@ class EportalClient {
     if (ip == null || ip.isEmpty) {
       throw const EportalException('未能从 portal 页面解析到本机 IP');
     }
+    final uri = buildLoginUri(ip);
     final body = buildLoginBody(
       username: username,
       password: password,
@@ -118,9 +119,12 @@ class EportalClient {
       freeAccess: freeAccess,
     );
     final res = await _client
-        .post(buildLoginUri(ip), headers: requestHeaders, body: body)
+        .post(uri, headers: requestHeaders, body: body)
         .timeout(config.requestTimeout);
-    return res.statusCode >= 200 && res.statusCode < 300;
+    final bodySnippet = res.body.replaceAll(RegExp(r'\s+'), ' ').trim();
+    final detail =
+        'HTTP ${res.statusCode} | url=$uri | DDDDD=${body['DDDDD']} | resp=${bodySnippet.length > 200 ? bodySnippet.substring(0, 200) : bodySnippet}';
+    return (res.statusCode >= 200 && res.statusCode < 300, detail);
   }
 
 }

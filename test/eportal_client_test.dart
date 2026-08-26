@@ -106,13 +106,14 @@ void main() {
         return _ok();
       });
 
-      final ok = await c.postLogin(
+      final (ok, detail) = await c.postLogin(
         username: 'stu001',
         password: 'secret',
         operator: Operator.cmcc,
       );
 
       expect(ok, isTrue);
+      expect(detail, contains('DDDDD=,0,stu001@cmcc'));
       expect(bodies.single['DDDDD'], ',0,stu001@cmcc');
       expect(bodies.single['upass'], 'secret');
     });

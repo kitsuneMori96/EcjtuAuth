@@ -88,20 +88,21 @@ class AutoConnectService extends ChangeNotifier {
     }
 
     final freeAccess = await _isFreeSsid();
-    try {
-      await _eportal.postLogin(
-        username: account.username,
-        password: account.password,
-        operator: account.operator,
-        freeAccess: freeAccess,
-      );
-    } on EportalException catch (e) {
-      log('认证请求失败：${e.message}');
-      return ConnectOutcome.authFailed;
-    } catch (e) {
-      log('认证请求异常：$e');
-      return ConnectOutcome.authFailed;
-    }
+    final (httpOk, loginDetail) = await _eportal.postLogin(
+      username: account.username,
+      password: account.password,
+      operator: account.operator,
+      freeAccess: freeAccess,
+    ).catchError((e) {
+      if (e is EportalException) {
+        log('认证请求失败：${e.message}');
+      } else {
+        log('认证请求异常：$e');
+      }
+      return (false, '$e');
+    });
+    log('登录响应：$loginDetail');
+    if (!httpOk) return ConnectOutcome.authFailed;
 
     // 服务器需要短暂时间让认证生效，立刻探测会被 captive portal 拦截
     await Future.delayed(const Duration(milliseconds: 800));
