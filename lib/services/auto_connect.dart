@@ -103,6 +103,9 @@ class AutoConnectService extends ChangeNotifier {
       return ConnectOutcome.authFailed;
     }
 
+    // 服务器需要短暂时间让认证生效，立刻探测会被 captive portal 拦截
+    await Future.delayed(const Duration(milliseconds: 800));
+
     netState = await _safeCheck();
     _updateState(netState);
     if (netState == NetState.online) {
@@ -110,6 +113,17 @@ class AutoConnectService extends ChangeNotifier {
       log('认证成功');
       return ConnectOutcome.success;
     }
+
+    // 首次探测失败，再等 1s 重试一次（部分服务器生效较慢）
+    await Future.delayed(const Duration(seconds: 1));
+    netState = await _safeCheck();
+    _updateState(netState);
+    if (netState == NetState.online) {
+      _attempt = 0;
+      log('认证成功（延迟生效）');
+      return ConnectOutcome.success;
+    }
+
     log('认证后仍无外网，请检查学号/密码/运营商');
     return ConnectOutcome.authFailed;
   }
