@@ -67,6 +67,18 @@ jobs:
     needs: [build-android, build-windows]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract release notes from CHANGELOG
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          awk -v t="$TAG" 'index($0, "## " t)==1 {flag=1; next} /^## /{flag=0} flag' CHANGELOG.md > release_notes.md
+          if [ ! -s release_notes.md ]; then
+            echo "未在 CHANGELOG.md 找到 $TAG 段落，请先补充更新说明" >&2
+            exit 1
+          fi
+          cat release_notes.md
+
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
@@ -76,7 +88,7 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          body_path: release_notes.md
           files: |
             AuinEcjtuWifi-android.apk
             artifacts/AuinEcjtuWifi-windows-zip/AuinEcjtuWifi-windows-x64.zip
