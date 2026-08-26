@@ -35,7 +35,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed &&
         widget.service.settings.autoConnectOnResume) {
       widget.service.connectOnce();
-      _refreshAll();
     }
   }
 

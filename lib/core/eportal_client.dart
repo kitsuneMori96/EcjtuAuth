@@ -46,10 +46,11 @@ class EportalClient {
     return res.body;
   }
 
-  /// 从 portal 页面提取本机在校园网内的 IP。
+  /// 从 portal 页面提取本机在校园网内的 IP（已 trim）。
   String? extractIp(String html) {
-    return _v46ip.firstMatch(html)?.group(1) ??
-        _v4ip.firstMatch(html)?.group(1);
+    return (_v46ip.firstMatch(html)?.group(1) ??
+            _v4ip.firstMatch(html)?.group(1))
+        ?.trim();
   }
 
   Uri buildLoginUri(String ip) => _eportalUri({

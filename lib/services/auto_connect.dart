@@ -58,6 +58,7 @@ class AutoConnectService extends ChangeNotifier {
   /// 单次「检测→认证→复验」流程。
   Future<ConnectOutcome> connectOnce() async {
     if (busy) return ConnectOutcome.alreadyOnline;
+    if (state == NetState.online) return ConnectOutcome.alreadyOnline;
     busy = true;
     notifyListeners();
     try {

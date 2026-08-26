@@ -26,8 +26,56 @@ void main() {
     expect(await c.check(), NetState.noCampusWifi);
   });
 
-  test('portal 可达且外网可达 → online', () async {
+  test('portal 可达且外网可达（非空 body）→ online', () async {
+    final c = checkerWith(
+        onGet: (_) async => http.Response('OK', 200));
+    expect(await c.check(), NetState.online);
+  });
+
+  test('portal 可达但外网返回空 body → campusBlocked', () async {
     final c = checkerWith(onGet: (_) async => http.Response('', 200));
+    expect(await c.check(), NetState.campusBlocked);
+  });
+
+  test('captive portal 劫持返回 200+HTML → campusBlocked', () async {
+    final c = checkerWith(
+      onGet: (uri) async {
+        if (uri.host == 'probe.example') {
+          return http.Response('<html><body>portal</body></html>', 200);
+        }
+        return http.Response(portalHtml, 200);
+      },
+    );
+    expect(await c.check(), NetState.campusBlocked);
+  });
+
+  test('generate_204 URL 返回 200（非 204）→ campusBlocked', () async {
+    final c = NetworkChecker(
+      config: AppConfig(probeUrls: [
+        'http://connect.rom.miui.com/generate_204',
+      ]),
+      client: MockClient((req) async {
+        if (req.url.host == 'connect.rom.miui.com') {
+          return http.Response('<html>portal</html>', 200);
+        }
+        return http.Response(portalHtml, 200);
+      }),
+    );
+    expect(await c.check(), NetState.campusBlocked);
+  });
+
+  test('generate_204 URL 返回 204 → online', () async {
+    final c = NetworkChecker(
+      config: AppConfig(probeUrls: [
+        'http://connect.rom.miui.com/generate_204',
+      ]),
+      client: MockClient((req) async {
+        if (req.url.host == 'connect.rom.miui.com') {
+          return http.Response('', 204);
+        }
+        return http.Response(portalHtml, 200);
+      }),
+    );
     expect(await c.check(), NetState.online);
   });
 

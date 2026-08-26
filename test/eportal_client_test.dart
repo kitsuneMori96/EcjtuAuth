@@ -30,9 +30,9 @@ EportalClient clientWith(
 
 void main() {
   group('extractIp', () {
-    test('解析 v46ip', () {
+    test('解析 v46ip（自动 trim 尾部空格）', () {
       final c = EportalClient();
-      expect(c.extractIp(fakePortalHtml), '10.30.66.77 ');
+      expect(c.extractIp(fakePortalHtml), '10.30.66.77');
     });
 
     test('v46ip 缺失时回退 v4ip', () {
@@ -101,6 +101,7 @@ void main() {
         }
         expect(req.url.toString(), contains('a=Login'));
         expect(req.url.toString(), contains('wlanuserip=10.30.66.77'));
+      expect(req.url.toString(), isNot(contains(' ')));
         bodies.add(req.bodyFields);
         return _ok();
       });
