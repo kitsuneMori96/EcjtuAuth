@@ -28,6 +28,7 @@ class AutoConnectService extends ChangeNotifier {
 
   NetState state = NetState.checking;
   bool busy = false;
+  bool _userLoggedOut = false;
   final List<String> logLines = [];
 
   Timer? _retryTimer;
@@ -56,8 +57,16 @@ class AutoConnectService extends ChangeNotifier {
   }
 
   /// 单次「检测→认证→复验」流程。
-  Future<ConnectOutcome> connectOnce() async {
+  ///
+  /// [auto] 为 true 表示由自动机制触发（回前台 / 重试循环），
+  /// 用户主动注销后此类调用会被忽略，直至用户手动发起连接。
+  Future<ConnectOutcome> connectOnce({bool auto = false}) async {
     if (busy) return ConnectOutcome.alreadyOnline;
+    if (auto && _userLoggedOut) {
+      log('已忽略自动连接（用户曾主动注销）');
+      return ConnectOutcome.alreadyOnline;
+    }
+    _userLoggedOut = false;
     busy = true;
     notifyListeners();
     try {
@@ -120,7 +129,7 @@ class AutoConnectService extends ChangeNotifier {
     if (!_settingsLoaded.autoRetry) return;
 
     Future<void> tick() async {
-      final outcome = await connectOnce();
+      final outcome = await connectOnce(auto: true);
       if (outcome.isGood) return;
       final base = _settingsLoaded.baseRetryDelay.inSeconds;
       final cap = _settingsLoaded.maxRetryDelay.inSeconds;
@@ -140,28 +149,54 @@ class AutoConnectService extends ChangeNotifier {
   }
 
   Future<NetState> refreshState() async {
-    final s = await _safeCheck();
-    _updateState(s);
-    return s;
+    if (busy) return state;
+    busy = true;
+    notifyListeners();
+    try {
+      final s = await _safeCheck();
+      _updateState(s);
+      return s;
+    } finally {
+      busy = false;
+      notifyListeners();
+    }
   }
 
+  /// 注销并做连通性实测：HTTP 2xx 不代表注销生效，
+  /// 以探测外网是否仍可达为准。
   Future<bool> logout() async {
+    if (busy) return false;
+    busy = true;
+    notifyListeners();
     try {
-      final ok = await _eportal.logout();
-      if (ok) {
+      final (httpOk, detail) = await _eportal.logout();
+      await Future.delayed(const Duration(milliseconds: 800));
+      final stillOnline = await _checker.probeInternet();
+
+      if (httpOk && !stillOnline) {
         cancelAutoRetry();
+        _userLoggedOut = true;
         log('已注销校园网（自动重连已暂停）');
-      } else {
-        log('注销请求已发送');
+        return true;
       }
-      await refreshState();
-      return ok;
+
+      cancelAutoRetry();
+      _userLoggedOut = true;
+      if (httpOk) {
+        log('服务器已响应但外网仍可访问，注销可能未生效：$detail');
+      } else {
+        log('注销请求失败：$detail');
+      }
+      return false;
     } on EportalException catch (e) {
       log('注销失败：${e.message}');
       return false;
     } catch (e) {
       log('注销异常：$e');
       return false;
+    } finally {
+      busy = false;
+      await refreshState();
     }
   }
 

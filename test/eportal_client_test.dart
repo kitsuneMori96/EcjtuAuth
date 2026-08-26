@@ -161,9 +161,10 @@ void main() {
         return _ok();
       });
 
-      final ok = await c.logout();
+      final (ok, detail) = await c.logout();
 
       expect(ok, isTrue);
+      expect(detail, contains('mac版'));
       expect(captured.toString(), contains('mac=AA-BB-CC-DD-EE-FF'));
     });
 
@@ -175,12 +176,17 @@ void main() {
       );
     });
 
-    test('注销接口返回 203 视为成功', () async {
+    test('注销接口返回 203 视为 HTTP 成功且响应体可见', () async {
       final c = clientWith((req) async {
-        if (req.method == 'POST') return http.Response('', 203);
+        if (req.method == 'POST') return http.Response('{"error":"ok"}', 203);
         return _ok(fakePortalHtmlMac);
       });
-      expect(await c.logout(), isTrue);
+
+      final (ok, detail) = await c.logout();
+
+      expect(ok, isTrue);
+      expect(detail, contains('203'));
+      expect(detail, contains('"error":"ok"'));
     });
 
     test('首页无 olmac 时回退 IP 版注销', () async {
@@ -193,9 +199,10 @@ void main() {
         return _ok("<script>var v46ip='10.1.2.3'</script>");
       });
 
-      final ok = await c.logout();
+      final (ok, detail) = await c.logout();
 
       expect(ok, isTrue);
+      expect(detail, contains('IP版'));
       expect(posts, hasLength(1));
       expect(posts.single.toString(), contains('wlanuserip=10.1.2.3'));
       expect(posts.single.toString(), contains('a=Logout'));

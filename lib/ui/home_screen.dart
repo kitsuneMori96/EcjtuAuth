@@ -34,7 +34,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed &&
         widget.service.settings.autoConnectOnResume) {
-      widget.service.connectOnce();
+      widget.service.connectOnce(auto: true);
       _refreshAll();
     }
   }
@@ -44,11 +44,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _refreshAll() async {
-    await widget.service.refreshState();
+    final s = await widget.service.refreshState();
     try {
       final ssid = await _wifiProbe.currentSsid();
       if (mounted) setState(() => _ssid = _cleanSsid(ssid));
     } catch (_) {}
+    if (mounted && !widget.service.busy) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('当前状态：${s.label}'),
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   String? _cleanSsid(String? raw) {

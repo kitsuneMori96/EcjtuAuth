@@ -176,9 +176,12 @@ class EportalClient {
   /// 已在线时 portal 首页可能不含有效 olmac，因此按序尝试：
   /// 1. 首页提取 olmac → mac 版注销；
   /// 2. 提取本机 IP → wlanuserip 版注销。
-  /// 全部失败时抛出 [EportalException]，message 说明各环节结果。
-  Future<bool> logout() async {
-    final failures = <String>[];
+  ///
+  /// 返回 `(httpOk, detail)`：httpOk 表示任一策略得到 2xx 响应，
+  /// detail 汇总各次响应码与响应体片段（2xx 不代表注销生效，
+  /// 需由调用方做连通性实测）。portal 不可达时抛 [EportalException]。
+  Future<(bool, String)> logout() async {
+    final attempts = <String>[];
 
     String? page;
     try {
@@ -187,46 +190,53 @@ class EportalClient {
       throw EportalException('portal 页面获取失败：$e');
     }
 
+    Future<(bool, String)> postLogout(Uri uri, Map<String, String> body) async {
+      final res = await _client
+          .post(uri, headers: requestHeaders, body: body)
+          .timeout(config.requestTimeout);
+      final bodySnippet =
+          res.body.replaceAll(RegExp(r'\s+'), ' ').trim().substringSafe(120);
+      return (
+        res.statusCode >= 200 && res.statusCode < 300,
+        'HTTP ${res.statusCode} body="$bodySnippet"',
+      );
+    }
+
     final mac = extractMac(page);
     if (mac != null && mac.isNotEmpty && mac != '00-00-00-00-00-00') {
       try {
-        final res = await _client
-            .post(
-              buildLogoutUri(mac),
-              headers: requestHeaders,
-              body: buildLogoutBody(mac: mac),
-            )
-            .timeout(config.requestTimeout);
-        if (res.statusCode >= 200 && res.statusCode < 300) return true;
-        failures.add('mac版注销 HTTP ${res.statusCode}');
+        final (ok, detail) =
+            await postLogout(buildLogoutUri(mac), buildLogoutBody(mac: mac));
+        attempts.add('mac版 $detail');
+        if (ok) return (true, attempts.join('；'));
       } catch (e) {
-        failures.add('mac版注销异常：$e');
+        attempts.add('mac版异常：$e');
       }
     } else {
-      failures.add('首页未提供 olmac（已在线态常见）');
+      attempts.add('首页未提供 olmac（已在线态常见）');
     }
 
     final ip = extractIp(page);
     if (ip != null && ip.isNotEmpty) {
       try {
-        final res = await _client
-            .post(
-              buildLogoutUriByIp(ip),
-              headers: requestHeaders,
-              body: buildLogoutBody(ip: ip),
-            )
-            .timeout(config.requestTimeout);
-        if (res.statusCode >= 200 && res.statusCode < 300) return true;
-        failures.add('IP版注销 HTTP ${res.statusCode}');
+        final (ok, detail) = await postLogout(
+            buildLogoutUriByIp(ip), buildLogoutBody(ip: ip));
+        attempts.add('IP版 $detail');
+        if (ok) return (true, attempts.join('；'));
       } catch (e) {
-        failures.add('IP版注销异常：$e');
+        attempts.add('IP版异常：$e');
       }
     } else {
-      failures.add('首页未解析到本机 IP');
+      attempts.add('首页未解析到本机 IP');
     }
 
-    throw EportalException(failures.join('；'));
+    throw EportalException(attempts.join('；'));
   }
+}
+
+extension on String {
+  String substringSafe(int max) =>
+      length <= max ? this : substring(0, max);
 }
 
 class EportalException implements Exception {
