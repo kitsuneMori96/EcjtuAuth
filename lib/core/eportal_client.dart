@@ -30,8 +30,8 @@ class EportalClient {
   Uri get portalUri => Uri.parse('http://${config.portalHost}/');
 
   Uri _eportalUri(Map<String, String> query) => Uri.http(
-        config.portalHost,
-        ':${AppConfig.portalPort}/eportal/',
+        '${config.portalHost}:${AppConfig.portalPort}',
+        '/eportal/',
         query,
       );
 
