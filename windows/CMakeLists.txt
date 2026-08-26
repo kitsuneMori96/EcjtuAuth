@@ -10,6 +10,10 @@ set(BINARY_NAME "auin_ecjtu_wifi")
 # versions of CMake.
 cmake_policy(VERSION 3.14...3.25)
 
+# permission_handler_windows 仍使用 /await 实验协程，
+# 新版 MSVC STL 需要此宏抑制 STL1011 硬错误。
+add_compile_definitions(_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS)
+
 # Define build configuration option.
 get_property(IS_MULTICONFIG GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
 if(IS_MULTICONFIG)
