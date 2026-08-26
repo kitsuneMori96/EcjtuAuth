@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "cn.kitsunemori.auin_ecjtu_wifi"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
