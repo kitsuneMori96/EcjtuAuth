@@ -36,15 +36,22 @@ class DesktopService with WindowListener {
       await windowManager.show();
       await windowManager.focus();
     });
+    if (Platform.isWindows) {
+      await windowManager.setPreventClose(true);
+    }
+  }
+
+  Future<void> showMainWindow() async {
+    await windowManager.show();
+    await windowManager.focus();
   }
 
   Future<void> initTray({
     required void Function() onConnect,
-    required void Function() onShowWindow,
   }) async {
     if (!Platform.isWindows) return;
     onTrayConnect = onConnect;
-    onTrayShowWindow = onShowWindow;
+    onTrayShowWindow = showMainWindow;
     try {
       await _tray.initSystemTray(
         title: 'AuinEcjtuWifi',
@@ -53,7 +60,7 @@ class DesktopService with WindowListener {
       );
       final menu = Menu()
         ..buildFrom([
-          MenuItemLabel(label: '打开主界面', onClicked: (_) => onShowWindow()),
+          MenuItemLabel(label: '打开主界面', onClicked: (_) => showMainWindow()),
           MenuItemLabel(label: '立即连接', onClicked: (_) => onConnect()),
           MenuSeparator(),
           MenuItemLabel(label: '退出', onClicked: (_) async {
@@ -66,7 +73,7 @@ class DesktopService with WindowListener {
       _tray.registerSystemTrayEventHandler((eventName) {
         switch (eventName) {
           case kSystemTrayEventClick:
-            onShowWindow();
+            showMainWindow();
             break;
           case kSystemTrayEventRightClick:
             _tray.popUpContextMenu();

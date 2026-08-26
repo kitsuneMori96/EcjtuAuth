@@ -168,7 +168,7 @@ class EportalClient {
     final res = await _client
         .post(buildLoginUri(ip), headers: requestHeaders, body: body)
         .timeout(config.requestTimeout);
-    return res.statusCode == 200;
+    return res.statusCode >= 200 && res.statusCode < 300;
   }
 
   /// 注销当前会话。
@@ -197,7 +197,7 @@ class EportalClient {
               body: buildLogoutBody(mac: mac),
             )
             .timeout(config.requestTimeout);
-        if (res.statusCode == 200) return true;
+        if (res.statusCode >= 200 && res.statusCode < 300) return true;
         failures.add('mac版注销 HTTP ${res.statusCode}');
       } catch (e) {
         failures.add('mac版注销异常：$e');
@@ -216,7 +216,7 @@ class EportalClient {
               body: buildLogoutBody(ip: ip),
             )
             .timeout(config.requestTimeout);
-        if (res.statusCode == 200) return true;
+        if (res.statusCode >= 200 && res.statusCode < 300) return true;
         failures.add('IP版注销 HTTP ${res.statusCode}');
       } catch (e) {
         failures.add('IP版注销异常：$e');

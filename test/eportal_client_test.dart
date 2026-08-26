@@ -175,6 +175,14 @@ void main() {
       );
     });
 
+    test('注销接口返回 203 视为成功', () async {
+      final c = clientWith((req) async {
+        if (req.method == 'POST') return http.Response('', 203);
+        return _ok(fakePortalHtmlMac);
+      });
+      expect(await c.logout(), isTrue);
+    });
+
     test('首页无 olmac 时回退 IP 版注销', () async {
       final posts = <Uri>[];
       final c = clientWith((req) async {

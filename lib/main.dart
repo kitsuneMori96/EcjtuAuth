@@ -53,7 +53,6 @@ class _AuinEcjtuWifiAppState extends State<AuinEcjtuWifiApp> {
     });
     widget.desktop.initTray(
       onConnect: () => service.connectOnce(),
-      onShowWindow: () {},
     );
   }
 
