@@ -167,9 +167,41 @@ void main() {
       expect(captured.toString(), contains('mac=AA-BB-CC-DD-EE-FF'));
     });
 
-    test('页面无 olmac 返回 false', () async {
+    test('olmac 双引号写法也能提取', () {
+      final c = EportalClient();
+      expect(
+        c.extractMac('<script>olmac = "AA-BB-CC";</script>'),
+        'AA-BB-CC',
+      );
+    });
+
+    test('首页无 olmac 时回退 IP 版注销', () async {
+      final posts = <Uri>[];
+      final c = clientWith((req) async {
+        if (req.method == 'POST') {
+          posts.add(req.url);
+          return _ok();
+        }
+        return _ok("<script>var v46ip='10.1.2.3'</script>");
+      });
+
+      final ok = await c.logout();
+
+      expect(ok, isTrue);
+      expect(posts, hasLength(1));
+      expect(posts.single.toString(), contains('wlanuserip=10.1.2.3'));
+      expect(posts.single.toString(), contains('a=Logout'));
+    });
+
+    test('两种策略都失败时抛出带原因的异常', () async {
       final c = clientWith((req) async => _ok('<html></html>'));
-      expect(await c.logout(), isFalse);
+      try {
+        await c.logout();
+        fail('should throw');
+      } on EportalException catch (e) {
+        expect(e.message, contains('olmac'));
+        expect(e.message, contains('IP'));
+      }
     });
   });
 }

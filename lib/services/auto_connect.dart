@@ -148,9 +148,17 @@ class AutoConnectService extends ChangeNotifier {
   Future<bool> logout() async {
     try {
       final ok = await _eportal.logout();
-      log(ok ? '已注销' : '注销失败');
+      if (ok) {
+        cancelAutoRetry();
+        log('已注销校园网（自动重连已暂停）');
+      } else {
+        log('注销请求已发送');
+      }
       await refreshState();
       return ok;
+    } on EportalException catch (e) {
+      log('注销失败：${e.message}');
+      return false;
     } catch (e) {
       log('注销异常：$e');
       return false;

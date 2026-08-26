@@ -22,7 +22,7 @@ class EportalClient {
 
   static final RegExp _v46ip = RegExp("v46ip='(.*?)'");
   static final RegExp _v4ip = RegExp("v4ip='(.*?)'");
-  static final RegExp _olmac = RegExp("olmac='(.*?)'");
+  static final RegExp _olmac = RegExp("olmac\\s*=\\s*['\"]([^'\"]*)['\"]");
 
   static const Map<String, String> requestHeaders = {
     'User-Agent':
@@ -55,7 +55,9 @@ class EportalClient {
   }
 
   /// 从 portal 页面提取注销所需的 mac 地址。
-  String? extractMac(String html) => _olmac.firstMatch(html)?.group(1);
+  /// 兼容单引号 / 双引号及等号两侧空白等页面写法差异。
+  String? extractMac(String html) =>
+      _olmac.firstMatch(html)?.group(1);
 
   Uri buildLoginUri(String ip) => _eportalUri({
         'c': 'ACSetting',
@@ -86,6 +88,34 @@ class EportalClient {
         'queryACIP': '0',
         'mac': mac,
       });
+
+  /// 未拿到 mac 时的备选：以本机 IP 定位会话注销。
+  Uri buildLogoutUriByIp(String ip) => _eportalUri({
+        'c': 'ACSetting',
+        'a': 'Logout',
+        'wlanuserip': ip,
+        'wlanacip': 'null',
+        'wlanacname': 'null',
+        'port': '',
+        'hostname': config.portalHost,
+        'iTermType': '1',
+        'session': 'null',
+        'queryACIP': '0',
+        'mac': '00-00-00-00-00-00',
+      });
+
+  Map<String, String> buildLogoutBody({String? mac, String? ip}) => {
+        'c': 'ACSetting',
+        'a': 'Logout',
+        'wlanuserip': ip ?? 'null',
+        'wlanacname': 'null',
+        'port': '',
+        'hostname': config.portalHost,
+        'iTermType': '1',
+        'session': 'null',
+        'queryACIP': '0',
+        'mac': mac ?? (ip == null ? '' : '00-00-00-00-00-00'),
+      };
 
   /// 构造登录表单。[freeAccess] 为图书馆免费网络（不带运营商后缀）。
   Map<String, String> buildLoginBody({
@@ -142,29 +172,60 @@ class EportalClient {
   }
 
   /// 注销当前会话。
+  ///
+  /// 已在线时 portal 首页可能不含有效 olmac，因此按序尝试：
+  /// 1. 首页提取 olmac → mac 版注销；
+  /// 2. 提取本机 IP → wlanuserip 版注销。
+  /// 全部失败时抛出 [EportalException]，message 说明各环节结果。
   Future<bool> logout() async {
-    final page = await fetchPortalPage();
+    final failures = <String>[];
+
+    String? page;
+    try {
+      page = await fetchPortalPage();
+    } catch (e) {
+      throw EportalException('portal 页面获取失败：$e');
+    }
+
     final mac = extractMac(page);
-    if (mac == null || mac.isEmpty) return false;
-    final res = await _client
-        .post(
-          buildLogoutUri(mac),
-          headers: requestHeaders,
-          body: {
-            'c': 'ACSetting',
-            'a': 'Logout',
-            'wlanuserip': 'null',
-            'wlanacname': 'null',
-            'port': '',
-            'hostname': config.portalHost,
-            'iTermType': '1',
-            'session': 'null',
-            'queryACIP': '0',
-            'mac': mac,
-          },
-        )
-        .timeout(config.requestTimeout);
-    return res.statusCode == 200;
+    if (mac != null && mac.isNotEmpty && mac != '00-00-00-00-00-00') {
+      try {
+        final res = await _client
+            .post(
+              buildLogoutUri(mac),
+              headers: requestHeaders,
+              body: buildLogoutBody(mac: mac),
+            )
+            .timeout(config.requestTimeout);
+        if (res.statusCode == 200) return true;
+        failures.add('mac版注销 HTTP ${res.statusCode}');
+      } catch (e) {
+        failures.add('mac版注销异常：$e');
+      }
+    } else {
+      failures.add('首页未提供 olmac（已在线态常见）');
+    }
+
+    final ip = extractIp(page);
+    if (ip != null && ip.isNotEmpty) {
+      try {
+        final res = await _client
+            .post(
+              buildLogoutUriByIp(ip),
+              headers: requestHeaders,
+              body: buildLogoutBody(ip: ip),
+            )
+            .timeout(config.requestTimeout);
+        if (res.statusCode == 200) return true;
+        failures.add('IP版注销 HTTP ${res.statusCode}');
+      } catch (e) {
+        failures.add('IP版注销异常：$e');
+      }
+    } else {
+      failures.add('首页未解析到本机 IP');
+    }
+
+    throw EportalException(failures.join('；'));
   }
 }
 
