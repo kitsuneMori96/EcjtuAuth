@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../models/net_state.dart';
 import '../platform/wifi_probe.dart';
@@ -27,15 +30,38 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     widget.service.addListener(_onServiceChanged);
     AutoConnectService.currentSsid = () => _wifiProbe.currentSsid();
+    _requestPermissionAndInit();
+  }
+
+  Future<void> _requestPermissionAndInit() async {
+    // Android 需要运行时请求定位权限才能获取 WiFi SSID
+    if (Platform.isAndroid) {
+      final status = await Permission.location.request();
+      if (!status.isGranted && !status.isLimited) {
+        // 权限被拒绝，仍然继续，只是 SSID 检测不可用
+      }
+    }
     _refreshAll();
+    // 启动时自动尝试认证（如已在线则跳过）
+    widget.service.connectOnce();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed &&
-        widget.service.settings.autoConnectOnResume) {
-      widget.service.connectOnce();
+    if (state == AppLifecycleState.resumed) {
+      // 回到前台时刷新 WiFi 名称
+      _refreshSsid();
+      if (widget.service.settings.autoConnectOnResume) {
+        widget.service.connectOnce();
+      }
     }
+  }
+
+  Future<void> _refreshSsid() async {
+    try {
+      final ssid = await _wifiProbe.currentSsid();
+      if (mounted) setState(() => _ssid = _cleanSsid(ssid));
+    } catch (_) {}
   }
 
   void _onServiceChanged() {
@@ -44,10 +70,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _refreshAll() async {
     await widget.service.refreshState();
-    try {
-      final ssid = await _wifiProbe.currentSsid();
-      if (mounted) setState(() => _ssid = _cleanSsid(ssid));
-    } catch (_) {}
+    await _refreshSsid();
   }
 
   String? _cleanSsid(String? raw) {
