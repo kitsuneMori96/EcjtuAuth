@@ -14,6 +14,7 @@ class AppSettings {
     this.maxRetryDelaySec = 300,
     this.launchAtStartup = false,
     this.autoConnectOnResume = true,
+    this.offlinePageLength,
   });
 
   final String portalHost;
@@ -22,12 +23,12 @@ class AppSettings {
   final bool autoRetry;
   final int baseRetryDelaySec;
   final int maxRetryDelaySec;
-
-  /// Windows：开机自启。
   final bool launchAtStartup;
-
-  /// Android：回到前台时自动连接（对齐原项目行为）。
   final bool autoConnectOnResume;
+
+  /// 离线登录页的响应长度（用户手动校准）。
+  /// null 表示未校准。
+  final int? offlinePageLength;
 
   Duration get baseRetryDelay => Duration(seconds: baseRetryDelaySec);
   Duration get maxRetryDelay => Duration(seconds: maxRetryDelaySec);
@@ -41,6 +42,7 @@ class AppSettings {
     int? maxRetryDelaySec,
     bool? launchAtStartup,
     bool? autoConnectOnResume,
+    int? offlinePageLength,
   }) {
     return AppSettings(
       portalHost: portalHost ?? this.portalHost,
@@ -51,6 +53,7 @@ class AppSettings {
       maxRetryDelaySec: maxRetryDelaySec ?? this.maxRetryDelaySec,
       launchAtStartup: launchAtStartup ?? this.launchAtStartup,
       autoConnectOnResume: autoConnectOnResume ?? this.autoConnectOnResume,
+      offlinePageLength: offlinePageLength ?? this.offlinePageLength,
     );
   }
 
@@ -58,11 +61,12 @@ class AppSettings {
         'portalHost': portalHost,
         'ssidCampus': ssidCampus,
         'ssidFree': ssidFree,
-        'autoRetry': autoRetry,
-        'baseRetryDelaySec': baseRetryDelaySec,
-        'maxRetryDelaySec': maxRetryDelaySec,
-        'launchAtStartup': launchAtStartup,
-        'autoConnectOnResume': autoConnectOnResume,
+        'autoRetry': autoRetry ? '1' : '0',
+        'baseRetryDelaySec': '$baseRetryDelaySec',
+        'maxRetryDelaySec': '$maxRetryDelaySec',
+        'launchAtStartup': launchAtStartup ? '1' : '0',
+        'autoConnectOnResume': autoConnectOnResume ? '1' : '0',
+        if (offlinePageLength != null) 'offlinePageLength': '$offlinePageLength',
       };
 
   factory AppSettings.fromMap(Map<String, Object> map) {
@@ -71,11 +75,12 @@ class AppSettings {
       ssidCampus:
           map['ssidCampus'] as String? ?? AppConfig.defaultSsidCampus,
       ssidFree: map['ssidFree'] as String? ?? AppConfig.defaultSsidFree,
-      autoRetry: map['autoRetry'] as bool? ?? true,
-      baseRetryDelaySec: map['baseRetryDelaySec'] as int? ?? 10,
-      maxRetryDelaySec: map['maxRetryDelaySec'] as int? ?? 300,
-      launchAtStartup: map['launchAtStartup'] as bool? ?? false,
-      autoConnectOnResume: map['autoConnectOnResume'] as bool? ?? true,
+      autoRetry: (map['autoRetry'] as String?) != '0',
+      baseRetryDelaySec: int.tryParse(map['baseRetryDelaySec'] as String? ?? '') ?? 10,
+      maxRetryDelaySec: int.tryParse(map['maxRetryDelaySec'] as String? ?? '') ?? 300,
+      launchAtStartup: (map['launchAtStartup'] as String?) == '1',
+      autoConnectOnResume: (map['autoConnectOnResume'] as String?) != '0',
+      offlinePageLength: int.tryParse(map['offlinePageLength'] as String? ?? ''),
     );
   }
 }

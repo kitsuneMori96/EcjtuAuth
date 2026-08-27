@@ -4,9 +4,9 @@ import '../models/net_state.dart';
 
 /// 网络状态检测器：区分「不在校园网」「校园网待认证」「在线」三态。
 ///
-/// 检测逻辑：对比 portal 页面内容指纹。
-/// - 首次 check() 保存离线指纹（登录页）
-/// - 后续 check() 对比响应：相同→离线，不同→在线
+/// 检测逻辑：对比 portal 页面响应长度与用户校准的离线页面长度。
+/// - 用户在设置页手动校准离线页面长度
+/// - check() 对比当前响应长度：相同→离线，不同→在线
 class NetworkChecker {
   NetworkChecker({
     EportalClient? eportal,
@@ -17,14 +17,8 @@ class NetworkChecker {
   final EportalClient _eportal;
   final AppConfig config;
 
-  /// 离线时 portal 页面的响应指纹（body 内容）。
-  String? _offlineFingerprint;
-
-  /// 缓存的本机 IP（从 portal 页面提取）。
-  String? _cachedIp;
-
-  /// 获取缓存的 IP（由 check() 填充）。
-  String? get cachedIp => _cachedIp;
+  /// 校准后的离线页面长度（由 settings 传入）。
+  int? offlinePageLength;
 
   Future<NetState> check() async {
     String portalBody;
@@ -34,23 +28,14 @@ class NetworkChecker {
       return NetState.noCampusWifi;
     }
 
-    // 缓存 IP
-    _cachedIp = _eportal.extractIp(portalBody);
-
-    // 首次：保存离线指纹
-    _offlineFingerprint ??= portalBody;
-
-    // 对比当前响应与离线指纹
-    if (portalBody == _offlineFingerprint) {
+    // 未校准：默认视为离线
+    if (offlinePageLength == null) {
       return NetState.campusBlocked;
     }
 
-    return NetState.online;
-  }
-
-  /// 重置指纹（登出或切换账号时调用）。
-  void resetFingerprint() {
-    _offlineFingerprint = null;
-    _cachedIp = null;
+    // 对比长度
+    return portalBody.length == offlinePageLength
+        ? NetState.campusBlocked
+        : NetState.online;
   }
 }

@@ -64,6 +64,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Future<void> _captureOfflineLength() async {
+    try {
+      final body = await widget.service.eportal.fetchPortalPage();
+      setState(() {
+        _settings = _settings.copyWith(offlinePageLength: body.length);
+      });
+      await widget.service.saveSettings(_settings);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('已保存离线页面长度: ${body.length} chars'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('获取失败: $e'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    }
+  }
+
   @override
   void dispose() {
     _hostCtrl.dispose();
@@ -139,6 +165,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   },
                 ),
             ],
+          ),
+        ),
+        const SizedBox(height: 18),
+        _sectionTitle(context, '在线检测校准'),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '离线页面长度',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _settings.offlinePageLength != null
+                      ? '已校准: ${_settings.offlinePageLength} chars'
+                      : '未校准 — 请先断开外网再点击获取',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: _settings.offlinePageLength != null
+                        ? Colors.green.shade700
+                        : Theme.of(context).colorScheme.error,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                FilledButton.tonal(
+                  onPressed: _captureOfflineLength,
+                  child: const Text('获取离线页面长度'),
+                ),
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 18),

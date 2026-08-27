@@ -26,6 +26,9 @@ class AutoConnectService extends ChangeNotifier {
   final CredentialStore _credentials;
   final SettingsStore settingsStore;
 
+  /// 暴露 eportal 客户端（供设置页使用）。
+  EportalClient get eportal => _eportal;
+
   NetState state = NetState.checking;
   bool busy = false;
   final List<String> logLines = [];
@@ -65,25 +68,31 @@ class AutoConnectService extends ChangeNotifier {
       return ConnectOutcome.authFailed;
     }
 
-    // 2. 获取 portal 页面（提取 IP + 保存指纹）
-    final checkSw = Stopwatch()..start();
-    final netState = await _safeCheck();
-    log('${checkSw.elapsedMilliseconds}ms | 检测 → ${netState.label}');
-    _updateState(netState);
-
-    if (netState == NetState.noCampusWifi) {
+    // 2. 获取 portal 页面（提取 IP + 判断状态）
+    final portalSw = Stopwatch()..start();
+    String portalBody;
+    try {
+      portalBody = await _eportal.fetchPortalPage();
+    } catch (e) {
+      log('${portalSw.elapsedMilliseconds}ms | portal 不可达: $e');
       return ConnectOutcome.notOnCampus;
     }
+    log('${portalSw.elapsedMilliseconds}ms | portal 获取成功 (${portalBody.length} chars)');
 
-    if (netState == NetState.online) {
-      _attempt = 0;
-      return ConnectOutcome.alreadyOnline;
+    final ip = _eportal.extractIp(portalBody);
+    if (ip == null || ip.isEmpty) {
+      log('无法解析本机 IP');
+      return ConnectOutcome.authFailed;
     }
 
-    final ip = _checker.cachedIp;
-    if (ip == null || ip.isEmpty) {
-      log('无法获取本机 IP');
-      return ConnectOutcome.authFailed;
+    // 同步 offlinePageLength 到 checker
+    _checker.offlinePageLength = _settingsLoaded.offlinePageLength;
+
+    // 判断在线状态
+    if (_checker.offlinePageLength != null && portalBody.length != _checker.offlinePageLength) {
+      _attempt = 0;
+      _updateState(NetState.online);
+      return ConnectOutcome.alreadyOnline;
     }
 
     // 3. 登录（尽可能快）
@@ -109,6 +118,9 @@ class AutoConnectService extends ChangeNotifier {
   }
 
   Future<ConnectOutcome> _verify(Stopwatch totalSw) async {
+    // 同步 offlinePageLength 到 checker
+    _checker.offlinePageLength = _settingsLoaded.offlinePageLength;
+
     final probeSw = Stopwatch()..start();
     var netState = await _safeCheck();
     log('${probeSw.elapsedMilliseconds}ms | 验证 → ${netState.label}');
