@@ -181,9 +181,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
+                  '在连接校园网但未登录的状态下校准，用于判断是否已认证',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
                   _settings.offlinePageLength != null
                       ? '已校准: ${_settings.offlinePageLength} chars'
-                      : '未校准 — 请先断开外网再点击获取',
+                      : '未校准 — 请先连接校园网但不要登录，再点击获取',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: _settings.offlinePageLength != null
                         ? Colors.green.shade700
