@@ -34,25 +34,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _requestPermissionAndInit() async {
-    // Android 需要运行时请求定位权限才能获取 WiFi SSID
     if (Platform.isAndroid) {
       final status = await Permission.location.request();
-      if (!status.isGranted && !status.isLimited) {
-        // 权限被拒绝，仍然继续，只是 SSID 检测不可用
-      }
+      if (!status.isGranted && !status.isLimited) {}
     }
-    _refreshAll();
-    // 启动时自动尝试认证（如已在线则跳过）
-    widget.service.connectOnce();
+    _refreshSsid();
+    // 启动时直接登录，不检查状态
+    widget.service.connectNow();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      // 回到前台时刷新 WiFi 名称
       _refreshSsid();
       if (widget.service.settings.autoConnectOnResume) {
-        widget.service.connectOnce();
+        // 回前台直接登录，不检查状态
+        widget.service.connectNow();
       }
     }
   }
@@ -83,7 +80,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _connect() async {
-    final outcome = await widget.service.connectOnce();
+    final outcome = await widget.service.connectNow();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(

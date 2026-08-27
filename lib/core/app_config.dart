@@ -17,7 +17,7 @@ class AppConfig {
     'https://www.baidu.com',
     'http://connect.rom.miui.com/generate_204',
   ];
-  static const Duration defaultRequestTimeout = Duration(seconds: 4);
+  static const Duration defaultRequestTimeout = Duration(milliseconds: 700);
 
   /// 认证服务器地址
   final String portalHost;

@@ -8,6 +8,10 @@
 
 </div>
 
+> [!WARNING]
+> **Beta 预发布版本** — 项目仍在积极开发中，功能与稳定性尚在实机验证，可能存在未知问题。
+> 欢迎试用并[提交 Issue](https://github.com/kitsuneMori96/AuinEcjtuWifi/issues) 反馈。
+
 ## 相比原项目的优化
 
 | 方面 | 原项目 | 本项目 |

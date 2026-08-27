@@ -5,6 +5,7 @@ import 'core/app_config.dart';
 import 'core/eportal_client.dart';
 import 'core/network_checker.dart';
 import 'platform/desktop_service.dart';
+import 'platform/wifi_probe.dart';
 import 'services/auto_connect.dart';
 import 'services/credential_store.dart';
 import 'services/settings_store.dart';
@@ -47,13 +48,26 @@ class _AuinEcjtuWifiAppState extends State<AuinEcjtuWifiApp> {
       settings: SettingsStore(widget.prefs),
     );
     service.loadSettings().then((_) {
+      // 启动时直接尝试连接（不等 UI）
+      _autoConnectOnStartup();
       if (service.settings.autoRetry) {
         service.startAutoRetry();
       }
     });
     widget.desktop.initTray(
-      onConnect: () => service.connectOnce(),
+      onConnect: () => service.connectNow(),
     );
+  }
+
+  Future<void> _autoConnectOnStartup() async {
+    // 检测 WiFi 名称，匹配校园网则直接登录
+    final ssid = await WifiProbe().currentSsid();
+    final cleanSsid = ssid?.trim().replaceAll('"', '') ?? '';
+    if (cleanSsid.contains(service.settings.ssidCampus) ||
+        cleanSsid.contains(service.settings.ssidFree)) {
+      service.log('检测到校园 WiFi: $cleanSsid，尝试连接');
+      service.connectNow();
+    }
   }
 
   @override
