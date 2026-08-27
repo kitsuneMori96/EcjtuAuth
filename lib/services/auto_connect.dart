@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 
 import '../core/eportal_client.dart';
 import '../core/network_checker.dart';
@@ -43,6 +44,25 @@ class AutoConnectService extends ChangeNotifier {
   Future<void> loadSettings() async {
     _settingsLoaded = await settingsStore.load();
     notifyListeners();
+  }
+
+  /// 从仓库获取最新的离线页面长度。
+  static const _repoLengthUrl =
+      'https://raw.githubusercontent.com/kitsuneMori96/AuinEcjtuWifi/main/portal_length.txt';
+
+  Future<void> fetchLengthFromRepo() async {
+    try {
+      final res = await http.get(Uri.parse(_repoLengthUrl))
+          .timeout(const Duration(seconds: 5));
+      if (res.statusCode != 200) return;
+      final length = int.tryParse(res.body.trim());
+      if (length == null || length <= 0) return;
+      _settingsLoaded = _settingsLoaded.copyWith(offlinePageLength: length);
+      await settingsStore.save(_settingsLoaded);
+      log('已从仓库获取离线页面长度: $length chars');
+    } catch (e) {
+      log('从仓库获取长度失败: $e');
+    }
   }
 
   Future<void> saveSettings(AppSettings s) async {
@@ -95,7 +115,7 @@ class AutoConnectService extends ChangeNotifier {
       return ConnectOutcome.alreadyOnline;
     }
 
-    // 3. 登录（尽可能快）
+    // 4. 登录（尽可能快）
     final loginSw = Stopwatch()..start();
     final freeAccess = await _isFreeSsid();
     final (httpOk, loginDetail) = await _eportal.postLogin(

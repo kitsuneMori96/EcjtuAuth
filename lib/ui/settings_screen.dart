@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 
 import '../platform/desktop_service.dart';
 import '../services/auto_connect.dart';
@@ -24,6 +25,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   AppSettings _settings = const AppSettings();
   bool _startupEnabled = false;
   bool _loading = true;
+  bool _fetchingLength = false;
+
+  /// 仓库中最新的离线页面长度。
+  static const _repoLengthUrl =
+      'https://raw.githubusercontent.com/kitsuneMori96/AuinEcjtuWifi/main/portal_length.txt';
 
   @override
   void initState() {
@@ -64,17 +70,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Future<void> _captureOfflineLength() async {
+  Future<void> _fetchLengthFromRepo() async {
+    setState(() => _fetchingLength = true);
     try {
-      final body = await widget.service.eportal.fetchPortalPage();
+      final res = await http.get(Uri.parse(_repoLengthUrl))
+          .timeout(const Duration(seconds: 5));
+      if (res.statusCode != 200) {
+        throw Exception('HTTP ${res.statusCode}');
+      }
+      final length = int.tryParse(res.body.trim());
+      if (length == null || length <= 0) {
+        throw Exception('内容格式错误: ${res.body.trim()}');
+      }
       setState(() {
-        _settings = _settings.copyWith(offlinePageLength: body.length);
+        _settings = _settings.copyWith(offlinePageLength: length);
       });
       await widget.service.saveSettings(_settings);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('已保存离线页面长度: ${body.length} chars'),
+          content: Text('已获取最新长度: $length chars'),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -87,6 +102,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
+    } finally {
+      if (mounted) setState(() => _fetchingLength = false);
     }
   }
 
@@ -181,16 +198,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '在连接校园网但未登录的状态下校准，用于判断是否已认证',
+                  '用于判断是否已认证。如果认证状态判断有误，可能是长度已变化，点击下方按钮获取最新长度。',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.outline,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 8),
                 Text(
                   _settings.offlinePageLength != null
-                      ? '已校准: ${_settings.offlinePageLength} chars'
-                      : '未校准 — 请先连接校园网但不要登录，再点击获取',
+                      ? '当前长度: ${_settings.offlinePageLength} chars'
+                      : '未获取 — 请先点击下方按钮',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: _settings.offlinePageLength != null
                         ? Colors.green.shade700
@@ -199,8 +216,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const SizedBox(height: 12),
                 FilledButton.tonal(
-                  onPressed: _captureOfflineLength,
-                  child: const Text('获取离线页面长度'),
+                  onPressed: _fetchingLength ? null : _fetchLengthFromRepo,
+                  child: _fetchingLength
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('从仓库获取最新长度'),
                 ),
               ],
             ),
