@@ -39,7 +39,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (!status.isGranted && !status.isLimited) {}
     }
     _refreshSsid();
-    // 启动时直接登录，不检查状态
+    // 启动时尝试连接（会先检测状态）
     widget.service.connectNow();
   }
 
@@ -48,7 +48,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       _refreshSsid();
       if (widget.service.settings.autoConnectOnResume) {
-        // 回前台直接登录，不检查状态
+        // 回前台尝试连接（会先检测状态）
         widget.service.connectNow();
       }
     }

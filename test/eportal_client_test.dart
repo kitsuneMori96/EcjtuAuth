@@ -91,22 +91,18 @@ void main() {
   });
 
   group('postLogin', () {
-    test('先取 portal 再 POST 登录表单', () async {
+    test('使用传入的 IP 发送登录表单', () async {
       final bodies = <Map<String, String>>[];
-      var step = 0;
       final c = clientWith((req) async {
-        if (step == 0) {
-          step += 1;
-          return _ok(fakePortalHtml);
-        }
         expect(req.url.toString(), contains('a=Login'));
         expect(req.url.toString(), contains('wlanuserip=10.30.66.77'));
-      expect(req.url.toString(), isNot(contains(' ')));
+        expect(req.url.toString(), isNot(contains(' ')));
         bodies.add(req.bodyFields);
         return _ok();
       });
 
       final (ok, detail) = await c.postLogin(
+        ip: '10.30.66.77',
         username: 'stu001',
         password: 'secret',
         operator: Operator.cmcc,
@@ -118,12 +114,15 @@ void main() {
       expect(bodies.single['upass'], 'secret');
     });
 
-    test('portal 无 IP 时抛出异常', () async {
-      final c = clientWith((req) async => _ok('<html/>'));
-      expect(
-        () => c.postLogin(username: 'u', password: 'p'),
-        throwsA(isA<EportalException>()),
+    test('302 重定向视为成功', () async {
+      final c = clientWith((req) async =>
+          http.Response('', 302, headers: {'location': '/'}));
+      final (ok, _) = await c.postLogin(
+        ip: '10.0.0.1',
+        username: 'u',
+        password: 'p',
       );
+      expect(ok, isTrue);
     });
   });
 

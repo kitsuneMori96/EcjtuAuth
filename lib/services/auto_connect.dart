@@ -55,23 +55,9 @@ class AutoConnectService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 快速连接：跳过状态检测，直接登录 → 验证。
-  ///
-  /// 用于启动、回前台、托盘「立即连接」等需要立即响应的场景。
-  Future<ConnectOutcome> connectNow() async {
-    if (busy) return ConnectOutcome.alreadyOnline;
-    busy = true;
-    notifyListeners();
-    final totalSw = Stopwatch()..start();
-    try {
-      return await _connectNowInner(totalSw);
-    } finally {
-      busy = false;
-      notifyListeners();
-    }
-  }
+  // ─── 统一登录逻辑 ───────────────────────────────────
 
-  Future<ConnectOutcome> _connectNowInner(Stopwatch totalSw) async {
+  Future<ConnectOutcome> _doLogin(Stopwatch totalSw) async {
     // 1. 读取账号
     final account = await _credentials.read();
     if (account == null || !account.isValid) {
@@ -79,10 +65,32 @@ class AutoConnectService extends ChangeNotifier {
       return ConnectOutcome.authFailed;
     }
 
-    // 2. 直接登录（不检查状态）
+    // 2. 获取 portal 页面（提取 IP + 保存指纹）
+    final checkSw = Stopwatch()..start();
+    final netState = await _safeCheck();
+    log('${checkSw.elapsedMilliseconds}ms | 检测 → ${netState.label}');
+    _updateState(netState);
+
+    if (netState == NetState.noCampusWifi) {
+      return ConnectOutcome.notOnCampus;
+    }
+
+    if (netState == NetState.online) {
+      _attempt = 0;
+      return ConnectOutcome.alreadyOnline;
+    }
+
+    final ip = _checker.cachedIp;
+    if (ip == null || ip.isEmpty) {
+      log('无法获取本机 IP');
+      return ConnectOutcome.authFailed;
+    }
+
+    // 3. 登录（尽可能快）
     final loginSw = Stopwatch()..start();
     final freeAccess = await _isFreeSsid();
     final (httpOk, loginDetail) = await _eportal.postLogin(
+      ip: ip,
       username: account.username,
       password: account.password,
       operator: account.operator,
@@ -93,27 +101,33 @@ class AutoConnectService extends ChangeNotifier {
     log('${loginSw.elapsedMilliseconds}ms | POST 登录 → $loginDetail');
     if (!httpOk) return ConnectOutcome.authFailed;
 
-    // 3. 等待服务器生效
+    // 4. 等待服务器生效
     await Future.delayed(const Duration(milliseconds: 300));
 
-    // 4. 探测验证
+    // 5. 验证
+    return _verify(totalSw);
+  }
+
+  Future<ConnectOutcome> _verify(Stopwatch totalSw) async {
     final probeSw = Stopwatch()..start();
     var netState = await _safeCheck();
-    log('${probeSw.elapsedMilliseconds}ms | 探测 → ${netState.label}');
+    log('${probeSw.elapsedMilliseconds}ms | 验证 → ${netState.label}');
     _updateState(netState);
+
     if (netState == NetState.online) {
       _attempt = 0;
       log('认证成功 (总耗时 ${totalSw.elapsedMilliseconds}ms)');
       return ConnectOutcome.success;
     }
 
-    // 5. 重试一次
+    // 重试一次
     await Future.delayed(const Duration(milliseconds: 500));
     probeSw.reset();
     probeSw.start();
     netState = await _safeCheck();
-    log('${probeSw.elapsedMilliseconds}ms | 二次探测 → ${netState.label}');
+    log('${probeSw.elapsedMilliseconds}ms | 二次验证 → ${netState.label}');
     _updateState(netState);
+
     if (netState == NetState.online) {
       _attempt = 0;
       log('认证成功·延迟生效 (总耗时 ${totalSw.elapsedMilliseconds}ms)');
@@ -122,6 +136,24 @@ class AutoConnectService extends ChangeNotifier {
 
     log('认证后仍无外网 (总耗时 ${totalSw.elapsedMilliseconds}ms)');
     return ConnectOutcome.authFailed;
+  }
+
+  // ─── 入口方法 ───────────────────────────────────────
+
+  /// 快速连接：直接登录 → 验证。
+  ///
+  /// 用于启动、回前台、托盘「立即连接」等需要立即响应的场景。
+  Future<ConnectOutcome> connectNow() async {
+    if (busy) return ConnectOutcome.alreadyOnline;
+    busy = true;
+    notifyListeners();
+    final totalSw = Stopwatch()..start();
+    try {
+      return await _doLogin(totalSw);
+    } finally {
+      busy = false;
+      notifyListeners();
+    }
   }
 
   /// 完整「检测→认证→复验」流程（含初始状态检测）。
@@ -134,78 +166,14 @@ class AutoConnectService extends ChangeNotifier {
     notifyListeners();
     final totalSw = Stopwatch()..start();
     try {
-      return await _connectOnceInner(totalSw);
+      return await _doLogin(totalSw);
     } finally {
       busy = false;
       notifyListeners();
     }
   }
 
-  Future<ConnectOutcome> _connectOnceInner(Stopwatch totalSw) async {
-    final checkSw = Stopwatch()..start();
-    var netState = await _safeCheck();
-    log('${checkSw.elapsedMilliseconds}ms | 初始检测 → ${netState.label}');
-    _updateState(netState);
-
-    if (netState == NetState.noCampusWifi) {
-      return ConnectOutcome.notOnCampus;
-    }
-    if (netState == NetState.online) {
-      _attempt = 0;
-      return ConnectOutcome.alreadyOnline;
-    }
-
-    final account = await _credentials.read();
-    if (account == null || !account.isValid) {
-      log('未配置账号，无法认证');
-      return ConnectOutcome.authFailed;
-    }
-
-    final loginSw = Stopwatch()..start();
-    final freeAccess = await _isFreeSsid();
-    final (httpOk, loginDetail) = await _eportal.postLogin(
-      username: account.username,
-      password: account.password,
-      operator: account.operator,
-      freeAccess: freeAccess,
-    ).catchError((e) {
-      if (e is EportalException) {
-        log('认证请求失败：${e.message}');
-      } else {
-        log('认证请求异常：$e');
-      }
-      return (false, '$e');
-    });
-    log('${loginSw.elapsedMilliseconds}ms | POST 登录 → $loginDetail');
-    if (!httpOk) return ConnectOutcome.authFailed;
-
-    await Future.delayed(const Duration(milliseconds: 300));
-
-    final probeSw = Stopwatch()..start();
-    netState = await _safeCheck();
-    log('${probeSw.elapsedMilliseconds}ms | 探测 → ${netState.label}');
-    _updateState(netState);
-    if (netState == NetState.online) {
-      _attempt = 0;
-      log('认证成功 (总耗时 ${totalSw.elapsedMilliseconds}ms)');
-      return ConnectOutcome.success;
-    }
-
-    await Future.delayed(const Duration(milliseconds: 500));
-    probeSw.reset();
-    probeSw.start();
-    netState = await _safeCheck();
-    log('${probeSw.elapsedMilliseconds}ms | 二次探测 → ${netState.label}');
-    _updateState(netState);
-    if (netState == NetState.online) {
-      _attempt = 0;
-      log('认证成功·延迟生效 (总耗时 ${totalSw.elapsedMilliseconds}ms)');
-      return ConnectOutcome.success;
-    }
-
-    log('认证后仍无外网 (总耗时 ${totalSw.elapsedMilliseconds}ms)');
-    return ConnectOutcome.authFailed;
-  }
+  // ─── 自动重试 ───────────────────────────────────────
 
   /// 启动指数退避重试循环：10s → 20s → 40s … 封顶 maxRetryDelay。
   Future<void> startAutoRetry() async {
@@ -216,8 +184,8 @@ class AutoConnectService extends ChangeNotifier {
     Future<void> tick() async {
       final outcome = await connectOnce();
       if (outcome.isGood) return;
-      final base = _settingsLoaded.baseRetryDelay.inSeconds;
-      final cap = _settingsLoaded.maxRetryDelay.inSeconds;
+      final base = _settingsLoaded.baseRetryDelaySec;
+      final cap = _settingsLoaded.maxRetryDelaySec;
       final delaySec = min(cap, base * (1 << min(_attempt, 6)));
       _attempt += 1;
       log('${outcome.label}，${delaySec}s 后重试（第 $_attempt 次）');
@@ -232,6 +200,8 @@ class AutoConnectService extends ChangeNotifier {
     _retryTimer = null;
     _attempt = 0;
   }
+
+  // ─── 状态查询 ───────────────────────────────────────
 
   Future<NetState> refreshState() async {
     if (busy) return state;

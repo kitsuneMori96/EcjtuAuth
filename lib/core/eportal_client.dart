@@ -101,16 +101,12 @@ class EportalClient {
 
   /// 发起登录请求。返回 (httpOk, detail)。
   Future<(bool, String)> postLogin({
+    required String ip,
     required String username,
     required String password,
     Operator operator = Operator.campus,
     bool freeAccess = false,
   }) async {
-    final page = await fetchPortalPage();
-    final ip = extractIp(page);
-    if (ip == null || ip.isEmpty) {
-      throw const EportalException('未能从 portal 页面解析到本机 IP');
-    }
     final uri = buildLoginUri(ip);
     final body = buildLoginBody(
       username: username,
@@ -124,7 +120,7 @@ class EportalClient {
     final bodySnippet = res.body.replaceAll(RegExp(r'\s+'), ' ').trim();
     final detail =
         'HTTP ${res.statusCode} | url=$uri | DDDDD=${body['DDDDD']} | resp=${bodySnippet.length > 200 ? bodySnippet.substring(0, 200) : bodySnippet}';
-    return (res.statusCode >= 200 && res.statusCode < 300, detail);
+    return (res.statusCode >= 200 && res.statusCode < 400, detail);
   }
 
 }
