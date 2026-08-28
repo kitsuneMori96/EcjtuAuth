@@ -104,16 +104,9 @@ class SettingsStore {
   }
 
   Future<void> save(AppSettings s) async {
-    final encoded = Uri(queryParameters: {
-      'portalHost': s.portalHost,
-      'ssidCampus': s.ssidCampus,
-      'ssidFree': s.ssidFree,
-      'autoRetry': s.autoRetry ? '1' : '0',
-      'baseRetryDelaySec': '${s.baseRetryDelaySec}',
-      'maxRetryDelaySec': '${s.maxRetryDelaySec}',
-      'launchAtStartup': s.launchAtStartup ? '1' : '0',
-      'autoConnectOnResume': s.autoConnectOnResume ? '1' : '0',
-    }).query;
+    final encoded = Uri(queryParameters: s.toMap().map(
+      (k, v) => MapEntry(k, '$v'),
+    )).query;
     await _prefs.setString(_prefix, encoded);
   }
 }
