@@ -2,6 +2,17 @@
 
 > 当前处于 **Beta 预发布**阶段，版本号及功能尚在迭代，正式版发布前可能有较多变动。
 
+## v1.1.0-beta.3 - 2026-08-28
+
+### 重构
+
+- **项目重命名**：AuinEcjtuWifi → EcjtuAuth，包名 `ecjtu_auth`，Android namespace `cn.kitsunemori.ecjtu_auth`
+- **集成 EportalAnalyzerFlutter**：Dr.COM eportal 分析工具移入 `tools/EportalAnalyzer/`，清除硬编码账密
+
+### 修复
+
+- **设置持久化**：`settings_store.dart` 的 `save()` 改用 `toMap()`，修复 `offlinePageLength` 未被保存的问题
+
 ## v1.1.0-beta.2 - 2026-08-27
 
 ### 修复
