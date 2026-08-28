@@ -1,5 +1,5 @@
-name: auin_ecjtu_wifi
-description: "AuinEcjtuWifi - ECJTU campus network auto authentication tool (Windows + Android)."
+name: ecjtu_auth
+description: "EcjtuAuth - ECJTU 校园网自动认证工具（Windows + Android）。"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev

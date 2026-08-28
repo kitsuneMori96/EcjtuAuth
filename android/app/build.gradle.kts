@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "cn.kitsunemori.auin_ecjtu_wifi"
+    namespace = "cn.kitsunemori.ecjtu_auth"
     compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
@@ -16,7 +16,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "cn.kitsunemori.auin_ecjtu_wifi"
+        applicationId = "cn.kitsunemori.ecjtu_auth"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

@@ -1,4 +1,4 @@
-package cn.kitsunemori.auin_ecjtu_wifi
+package cn.kitsunemori.ecjtu_auth
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-import 'package:auin_ecjtu_wifi/core/app_config.dart';
-import 'package:auin_ecjtu_wifi/core/eportal_client.dart';
-import 'package:auin_ecjtu_wifi/models/operator.dart';
+import 'package:ecjtu_auth/core/app_config.dart';
+import 'package:ecjtu_auth/core/eportal_client.dart';
+import 'package:ecjtu_auth/models/operator.dart';
 
 const fakePortalHtml = '''
 <html><head></head>

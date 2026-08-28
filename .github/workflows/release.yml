@@ -32,7 +32,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: AuinEcjtuWifi-android-apk
+          name: EcjtuAuth-android-apk
           path: build/app/outputs/flutter-apk/app-release.apk
 
   build-windows:
@@ -56,12 +56,12 @@ jobs:
         shell: pwsh
         run: |
           Compress-Archive -Path "build/windows/x64/runner/Release/*" `
-            -DestinationPath "AuinEcjtuWifi-windows-x64.zip"
+            -DestinationPath "EcjtuAuth-windows-x64.zip"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: AuinEcjtuWifi-windows-zip
-          path: AuinEcjtuWifi-windows-x64.zip
+          name: EcjtuAuth-windows-zip
+          path: EcjtuAuth-windows-x64.zip
 
   release:
     needs: [build-android, build-windows]
@@ -84,12 +84,12 @@ jobs:
           path: artifacts
 
       - name: Rename APK
-        run: mv artifacts/AuinEcjtuWifi-android-apk/app-release.apk AuinEcjtuWifi-android.apk
+        run: mv artifacts/EcjtuAuth-android-apk/app-release.apk EcjtuAuth-android.apk
 
       - uses: softprops/action-gh-release@v2
         with:
           prerelease: true
           body_path: release_notes.md
           files: |
-            AuinEcjtuWifi-android.apk
-            artifacts/AuinEcjtuWifi-windows-zip/AuinEcjtuWifi-windows-x64.zip
+            EcjtuAuth-android.apk
+            artifacts/EcjtuAuth-windows-zip/EcjtuAuth-windows-x64.zip

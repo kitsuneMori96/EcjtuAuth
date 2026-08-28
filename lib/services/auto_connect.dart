@@ -48,7 +48,7 @@ class AutoConnectService extends ChangeNotifier {
 
   /// 从仓库获取最新的离线页面长度。
   static const _repoLengthUrl =
-      'https://raw.githubusercontent.com/kitsuneMori96/AuinEcjtuWifi/main/portal_length.txt';
+      'https://raw.githubusercontent.com/kitsuneMori96/EcjtuAuth/main/portal_length.txt';
 
   Future<void> fetchLengthFromRepo() async {
     try {

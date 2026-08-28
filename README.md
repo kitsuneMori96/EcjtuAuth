@@ -1,16 +1,14 @@
 <div align="center">
 
-# AuinEcjtuWifi
+# EcjtuAuth
 
 **ECJTU 校园网自动认证工具 · Windows + Android**
-
-基于 Flutter 的 [Apauto-to-all/AutoAuthorize](https://github.com/Apauto-to-all/AutoAuthorize) 重构优化版
 
 </div>
 
 > [!WARNING]
 > **Beta 预发布版本** — 项目仍在积极开发中，功能与稳定性尚在实机验证，可能存在未知问题。
-> 欢迎试用并[提交 Issue](https://github.com/kitsuneMori96/AuinEcjtuWifi/issues) 反馈。
+> 欢迎试用并[提交 Issue](https://github.com/kitsuneMori96/EcjtuAuth/issues) 反馈。
 
 ## 在线检测原理
 
@@ -101,6 +99,8 @@ lib/
     ├── account_screen.dart    # 账号设置
     ├── settings_screen.dart   # 系统设置 + 在线检测校准
     └── widgets/               # 可复用组件
+tools/
+└── EportalAnalyzer/           # Dr.COM eportal 服务器分析工具
 ```
 
 ## 开发
@@ -118,9 +118,9 @@ flutter run           # 或 -d windows / -d android
 
 ```bash
 git tag v1.1.0-beta.2 && git push origin v1.1.0-beta.2
-# → Releases 页产出 AuinEcjtuWifi-android.apk 与 AuinEcjtuWifi-windows-x64.zip
+# → Releases 页产出 EcjtuAuth-android.apk 与 EcjtuAuth-windows-x64.zip
 ```
 
 ## 许可
 
-MIT License，继承自原项目。
+MIT License。

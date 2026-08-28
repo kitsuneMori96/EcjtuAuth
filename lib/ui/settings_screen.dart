@@ -29,7 +29,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   /// 仓库中最新的离线页面长度。
   static const _repoLengthUrl =
-      'https://raw.githubusercontent.com/kitsuneMori96/AuinEcjtuWifi/main/portal_length.txt';
+      'https://raw.githubusercontent.com/kitsuneMori96/EcjtuAuth/main/portal_length.txt';
 
   @override
   void initState() {

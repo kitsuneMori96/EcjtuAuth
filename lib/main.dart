@@ -21,20 +21,20 @@ Future<void> main() async {
   if (desktop.isDesktop) await desktop.ensureWindow();
 
   final prefs = await SharedPreferences.getInstance();
-  runApp(AuinEcjtuWifiApp(desktop: desktop, prefs: prefs));
+  runApp(EcjtuAuthApp(desktop: desktop, prefs: prefs));
 }
 
-class AuinEcjtuWifiApp extends StatefulWidget {
-  const AuinEcjtuWifiApp({super.key, required this.desktop, required this.prefs});
+class EcjtuAuthApp extends StatefulWidget {
+  const EcjtuAuthApp({super.key, required this.desktop, required this.prefs});
 
   final DesktopService desktop;
   final SharedPreferences prefs;
 
   @override
-  State<AuinEcjtuWifiApp> createState() => _AuinEcjtuWifiAppState();
+  State<EcjtuAuthApp> createState() => _EcjtuAuthAppState();
 }
 
-class _AuinEcjtuWifiAppState extends State<AuinEcjtuWifiApp> {
+class _EcjtuAuthAppState extends State<EcjtuAuthApp> {
   late final AutoConnectService service;
 
   @override
@@ -73,7 +73,7 @@ class _AuinEcjtuWifiAppState extends State<AuinEcjtuWifiApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'AuinEcjtuWifi',
+      title: 'EcjtuAuth',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
@@ -116,7 +116,7 @@ class _HomeShellState extends State<HomeShell> {
     ];
     return Scaffold(
       appBar: AppBar(
-        title: const Text('AuinEcjtuWifi', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('EcjtuAuth', style: TextStyle(fontWeight: FontWeight.bold)),
         actions: [
           IconButton(
             tooltip: '手动检测',

@@ -30,7 +30,7 @@ class DesktopService with WindowListener {
       size: Size(430, 760),
       minimumSize: Size(360, 560),
       center: true,
-      title: 'AuinEcjtuWifi',
+      title: 'EcjtuAuth',
     );
     await windowManager.waitUntilReadyToShow(options, () async {
       await windowManager.show();
@@ -54,9 +54,9 @@ class DesktopService with WindowListener {
     onTrayShowWindow = showMainWindow;
     try {
       await _tray.initSystemTray(
-        title: 'AuinEcjtuWifi',
+      title: 'EcjtuAuth',
         iconPath: 'assets/app_icon.ico',
-        toolTip: 'AuinEcjtuWifi - ECJTU 校园网助手',
+        toolTip: 'EcjtuAuth - ECJTU 校园网助手',
       );
       final menu = Menu()
         ..buildFrom([
@@ -69,7 +69,7 @@ class DesktopService with WindowListener {
           }),
         ]);
       await _tray.setContextMenu(menu);
-      await _tray.setToolTip('AuinEcjtuWifi');
+      await _tray.setToolTip('EcjtuAuth');
       _tray.registerSystemTrayEventHandler((eventName) {
         switch (eventName) {
           case kSystemTrayEventClick:
