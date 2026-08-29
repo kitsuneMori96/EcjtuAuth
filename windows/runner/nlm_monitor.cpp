@@ -100,7 +100,6 @@ void NlmMonitor::Stop() {
 // ---------------------------------------------------------------------------
 
 void NlmMonitor::PollLoop() {
-  // Initial state check.
   bool initial = CheckInternetConnectivity();
   {
     std::lock_guard lock(mutex_);
@@ -116,18 +115,20 @@ void NlmMonitor::PollLoop() {
 
     bool connected = CheckInternetConnectivity();
 
-    std::lock_guard lock(mutex_);
-    if (connected != last_connected_) {
-      last_connected_ = connected;
+    bool changed = false;
+    {
+      std::lock_guard lock(mutex_);
+      if (connected != last_connected_) {
+        last_connected_ = connected;
+        changed = true;
+      }
+    }
+
+    if (changed) {
       if (connected) {
-        // Release lock before sending event to avoid deadlock.
-        lock.~lock_guard();
         SendEvent("connected", GetConnectedSsid());
-        break;  // break after manual unlock
       } else {
-        lock.~lock_guard();
         SendEvent("disconnected", "");
-        break;
       }
     }
   }
