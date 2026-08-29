@@ -2,69 +2,31 @@
 
 > 当前处于 **Beta 预发布**阶段，版本号及功能尚在迭代，正式版发布前可能有较多变动。
 
-## v1.1.0-beta.3 - 2026-08-28
+## v1.1.0 - 2026-08-29
 
-### 重构
+### 新增
 
-- **项目重命名**：AuinEcjtuWifi → EcjtuAuth，包名 `ecjtu_auth`，Android namespace `cn.kitsunemori.ecjtu_auth`
+- **Windows NLM 网络事件监听**：使用 COM INetworkListManagerEvents 实现事件驱动的网络状态检测
+  - 后台 STA 线程监听 NetworkConnected / NetworkDisconnected 事件
+  - 网络变化时自动检测在线状态，不在线则触发认证
+  - MethodChannel 提供 SSID 查询（替代不可靠的 network_info_plus）
 - **集成 EportalAnalyzerFlutter**：Dr.COM eportal 分析工具移入 `tools/EportalAnalyzer/`，清除硬编码账密
 
 ### 修复
 
 - **设置持久化**：`settings_store.dart` 的 `save()` 改用 `toMap()`，修复 `offlinePageLength` 未被保存的问题
-
-## v1.1.0-beta.2 - 2026-08-27
-
-### 修复
-
 - **在线检测误判**：自动保存指纹可能在已登录状态下存错值，改为用户手动校准离线页面长度
 - **焦点变化重复登录**：`_doLogin()` 加入 online 检查，已在线时不发 POST
 - **登录成功判断**：302 重定向视为请求成功（不代表登录成功），登录成功通过页面长度变化判断
 
 ### 优化
 
+- **项目重命名**：AuinEcjtuWifi → EcjtuAuth，包名 `ecjtu_auth`，Android namespace `cn.kitsunemori.ecjtu_auth`
 - **统一登录流程**：消除 `connectNow()`/`connectOnce()` 重复代码
 - **在线检测改为长度对比**：更轻量、更可靠
 - **超时调整**：700ms → 500ms
 - 设置页新增「在线检测校准」section，用户可手动获取离线页面长度
 
-## v1.1.0-beta - 2026-08-27
+## v1.0.0 - 2026-08-26
 
-### 修复
-
-- **eportal URL 端口编码错误**：`Uri.http(host, ':801/eportal/')` 将 `:801` 编码为路径 `%3A801`，服务器返回 `203 Bad request(1)`。改为 `Uri.http('host:801', '/eportal/')` 正确传递端口
-- **假在线误判**：`probeInternet()` 仅检查 HTTP 2xx 状态码，captive portal 劫持后返回 `200+HTML` 被误判为在线。现对 `generate_204` URL 严格要求 204 状态码，普通 URL 校验非空 body 且不含 HTML 标签
-- **IP 提取带尾部空格**：`extractIp()` 返回值未 trim，`wlanuserip` 带尾部空格可能导致服务器拒绝
-- **认证后探测过快**：POST 登录后立刻探测外网，服务器尚未生效即被 captive portal 拦截。增加 300ms + 500ms 两次探测窗口
-
-### 优化
-
-- **启动即时认证**：新增 `connectNow()` 快速连接方法，跳过状态检测直接登录，启动/回前台时立即尝试认证
-- **操作耗时日志**：每步操作（POST 登录、探测验证等）记录毫秒级耗时，便于后续调优
-- **超时缩短**：全局 HTTP 超时从 4s 降至 700ms（校园网内网请求通常 <500ms）
-- Windows 启动时检测 WiFi 名称，匹配校园网 SSID 即自动连接
-- `resumed` 生命周期改为 `connectNow()`，不再先检查 WiFi 状态
-- `connectOnce()` 已在线时直接返回，避免焦点变化时无意义重复检测
-- `resumed` 仅调 `connectOnce()`，消除并行双重 login POST 竞态
-
-### 移除
-
-- **注销校园网功能**：eportal 注销接口返回 `203 Bad request(2)`，参数格式无文档可考；且该功能与「保持在线」定位无关
-- 状态刷新后的白色 SnackBar 通知
-
-### 界面
-
-- WiFi SSID 检测：Android 运行时请求定位权限，修复「未检测到 WiFi」
-- 回前台时同步刷新 WiFi 名称
-- 登录响应详情日志：显示服务器状态码、请求 URL、账号字段、响应内容
-
-## v1.0.4-beta - 2026-08-26
-
-### 移除
-
-- **注销校园网功能**
-- 移除随注销引入的「用户主动注销」标志与相关自动连接拦截逻辑
-
-## v1.0.0~v1.0.3 - 2026-08-26
-
-首个发布版本及迭代修复。基于 [Apauto-to-all/AutoAuthorize](https://github.com/Apauto-to-all/AutoAuthorize) 全面重写，单一 Flutter 代码库覆盖 Windows 与 Android。
+首个发布版本。基于 [Apauto-to-all/AutoAuthorize](https://github.com/Apauto-to-all/AutoAuthorize) 全面重写，单一 Flutter 代码库覆盖 Windows 与 Android。

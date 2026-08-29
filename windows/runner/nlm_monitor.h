@@ -1,7 +1,7 @@
 #ifndef RUNNER_NLM_MONITOR_H_
 #define RUNNER_NLM_MONITOR_H_
 
-#include <flutter_messenger.h>
+#include <flutter/binary_messenger.h>
 #include <flutter/event_channel.h>
 #include <flutter/event_sink.h>
 #include <flutter/method_channel.h>
@@ -13,11 +13,13 @@
 #include <string>
 #include <thread>
 
+#define INITGUID
 #include <netlistmgr.h>
+#undef INITGUID
 
 class NlmMonitor {
  public:
-  explicit NlmMonitor(FlutterDesktopMessenger* messenger);
+  explicit NlmMonitor(flutter::BinaryMessenger* messenger);
   ~NlmMonitor();
 
   NlmMonitor(const NlmMonitor&) = delete;
@@ -30,22 +32,19 @@ class NlmMonitor {
 
  private:
   class NetworkListManagerEvents;
-  class EventSinkHandler;
 
-  void OnConnectivityChanged(NLM_CONNECTIVITY newConnectivity);
+  void OnConnectivityChanged();
   void StartComThread();
   void StopComThread();
   void UnregisterCallback();
   void SendEvent(const std::string& event_type, const std::string& ssid);
 
-  std::wstring GetSsidFromConnection(INetworkConnection* connection);
-  std::wstring GetSsidFromNetwork(INetwork* network);
+  std::wstring GetSsidForConnection(INetworkConnection* connection);
 
-  FlutterDesktopMessenger* messenger_;
+  flutter::BinaryMessenger* messenger_;
   std::unique_ptr<flutter::EventChannel<flutter::EncodableValue>> event_channel_;
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> method_channel_;
   std::unique_ptr<flutter::EventSink<flutter::EncodableValue>> event_sink_;
-  std::unique_ptr<EventSinkHandler> event_sink_handler_;
 
   std::thread com_thread_;
   std::atomic<bool> running_{false};

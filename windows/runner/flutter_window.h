@@ -1,21 +1,20 @@
 #ifndef RUNNER_FLUTTER_WINDOW_H_
 #define RUNNER_FLUTTER_WINDOW_H_
 
+#include <flutter/binary_messenger.h>
 #include <flutter/dart_project.h>
 #include <flutter/flutter_view_controller.h>
-#include <flutter_messenger.h>
 
 #include <memory>
 
 #include "win32_window.h"
 
-// A window that does nothing but host a Flutter view.
 class FlutterWindow : public Win32Window {
  public:
   explicit FlutterWindow(const flutter::DartProject& project);
   virtual ~FlutterWindow();
 
-  FlutterDesktopMessenger* GetMessenger() {
+  flutter::BinaryMessenger* GetMessenger() {
     if (flutter_controller_ && flutter_controller_->engine()) {
       return flutter_controller_->engine()->messenger();
     }
