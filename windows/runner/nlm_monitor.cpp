@@ -9,28 +9,41 @@ namespace {
 constexpr char kEventChannelName[] = "ecjtu_auth/network_events";
 constexpr char kMethodChannelName[] = "ecjtu_auth/network_methods";
 
+// NLM_CONNECTIVITY constants (fallback if netlistmgr.h doesn't define them).
+#ifndef NLM_CONNECTIVITY_IPV4_CONNECTED
+constexpr NLM_CONNECTIVITY NLM_CONNECTIVITY_IPV4_CONNECTED =
+    static_cast<NLM_CONNECTIVITY>(0x00000010);
+#endif
+#ifndef NLM_CONNECTIVITY_IPV6_CONNECTED
+constexpr NLM_CONNECTIVITY NLM_CONNECTIVITY_IPV6_CONNECTED =
+    static_cast<NLM_CONNECTIVITY>(0x00000020);
+#endif
+
 }  // namespace
 
 // ---------------------------------------------------------------------------
 // StreamHandler: bridges Flutter EventChannel to the NlmMonitor.
 // ---------------------------------------------------------------------------
 
-class NlmStreamHandler
+class NlmMonitor::NlmStreamHandler
     : public flutter::StreamHandler<flutter::EncodableValue> {
  public:
   explicit NlmStreamHandler(NlmMonitor* monitor) : monitor_(monitor) {}
 
+ protected:
   std::unique_ptr<flutter::StreamHandlerError<flutter::EncodableValue>>
-  OnListen(const flutter::EncodableValue* args,
-           std::unique_ptr<flutter::EventSink<flutter::EncodableValue>>&&
-               events) override {
+  OnListenInternal(
+      const flutter::EncodableValue* arguments,
+      std::unique_ptr<flutter::EventSink<flutter::EncodableValue>>&&
+          events) override {
     std::lock_guard lock(monitor_->mutex_);
     monitor_->event_sink_ = std::move(events);
     return nullptr;
   }
 
   std::unique_ptr<flutter::StreamHandlerError<flutter::EncodableValue>>
-  OnCancel(const flutter::EncodableValue* args) override {
+  OnCancelInternal(
+      const flutter::EncodableValue* arguments) override {
     std::lock_guard lock(monitor_->mutex_);
     monitor_->event_sink_ = nullptr;
     return nullptr;
@@ -90,8 +103,7 @@ class NlmMonitor::NetworkListManagerEvents
   }
 
   HRESULT STDMETHODCALLTYPE NetworkConnectionPropertyChanged(
-      GUID networkId,
-      NLM_ENUM_NETWORK_CONNECTION_STATUS_FLAGS statusFlags) override {
+      GUID networkId, DWORD statusFlags) override {
     return S_OK;
   }
 
@@ -224,7 +236,8 @@ void NlmMonitor::StartComThread() {
 
 void NlmMonitor::StopComThread() {
   if (com_thread_.joinable()) {
-    PostThreadMessage(GetThreadId(com_thread_.native_handle()), WM_QUIT, 0, 0);
+    DWORD tid = GetThreadId(com_thread_.native_handle());
+    PostThreadMessage(tid, WM_QUIT, 0, 0);
     com_thread_.join();
   }
 
@@ -258,7 +271,6 @@ void NlmMonitor::UnregisterCallback() {
 void NlmMonitor::OnConnectivityChanged() {
   if (!nlm_) return;
 
-  // Check if any connection has internet connectivity.
   IEnumNetworkConnections* enum_conns = nullptr;
   HRESULT hr = nlm_->GetNetworkConnections(&enum_conns);
   if (FAILED(hr) || !enum_conns) return;

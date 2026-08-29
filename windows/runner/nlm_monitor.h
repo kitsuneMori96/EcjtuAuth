@@ -14,6 +14,7 @@
 #include <thread>
 
 #define INITGUID
+#include <objbase.h>
 #include <netlistmgr.h>
 #undef INITGUID
 
@@ -32,6 +33,7 @@ class NlmMonitor {
 
  private:
   class NetworkListManagerEvents;
+  class NlmStreamHandler;
 
   void OnConnectivityChanged();
   void StartComThread();
@@ -56,6 +58,8 @@ class NlmMonitor {
 
   std::mutex mutex_;
   std::atomic<bool> initialized_{false};
+
+  friend class NlmStreamHandler;
 };
 
 #endif  // RUNNER_NLM_MONITOR_H_
