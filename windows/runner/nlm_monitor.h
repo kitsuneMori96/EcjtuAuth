@@ -1,16 +1,6 @@
 #ifndef RUNNER_NLM_MONITOR_H_
 #define RUNNER_NLM_MONITOR_H_
 
-#ifndef _WIN32_WINNT
-#define _WIN32_WINNT 0x0601
-#endif
-
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <windows.h>
-#include <iphlpapi.h>
-#include <netioapi.h>
-
 #include <flutter/binary_messenger.h>
 #include <flutter/event_channel.h>
 #include <flutter/event_sink.h>
@@ -40,8 +30,7 @@ class NlmMonitor {
   class NlmStreamHandler;
 
   void PollLoop();
-  bool CheckInternetConnectivity();
-  std::string GetConnectedSsid();
+  std::pair<bool, std::string> GetWifiStatus();
   void SendEvent(const std::string& event_type, const std::string& ssid);
 
   flutter::BinaryMessenger* messenger_;
