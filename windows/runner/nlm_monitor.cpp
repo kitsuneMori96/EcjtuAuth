@@ -1,5 +1,7 @@
 #include "nlm_monitor.h"
 
+#include <windows.h>
+
 #include <flutter/encodable_value.h>
 
 #include <array>
