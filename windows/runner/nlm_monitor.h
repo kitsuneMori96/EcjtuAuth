@@ -13,10 +13,9 @@
 #include <string>
 #include <thread>
 
-#define INITGUID
-#include <objbase.h>
-#include <netlistmgr.h>
-#undef INITGUID
+#include <windows.h>
+#include <iphlpapi.h>
+#include <netioapi.h>
 
 class NlmMonitor {
  public:
@@ -32,32 +31,23 @@ class NlmMonitor {
   std::string GetCurrentSsid();
 
  private:
-  class NetworkListManagerEvents;
   class NlmStreamHandler;
 
-  void OnConnectivityChanged();
-  void StartComThread();
-  void StopComThread();
-  void UnregisterCallback();
+  void PollLoop();
+  bool CheckInternetConnectivity();
+  std::string GetConnectedSsid();
   void SendEvent(const std::string& event_type, const std::string& ssid);
-
-  std::wstring GetSsidForConnection(INetworkConnection* connection);
 
   flutter::BinaryMessenger* messenger_;
   std::unique_ptr<flutter::EventChannel<flutter::EncodableValue>> event_channel_;
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> method_channel_;
   std::unique_ptr<flutter::EventSink<flutter::EncodableValue>> event_sink_;
 
-  std::thread com_thread_;
+  std::thread poll_thread_;
   std::atomic<bool> running_{false};
+  bool last_connected_ = false;
 
-  INetworkListManager* nlm_ = nullptr;
-  IConnectionPoint* connection_point_ = nullptr;
-  DWORD cookie_ = 0;
-  NetworkListManagerEvents* callback_ = nullptr;
-
-  std::mutex mutex_;
-  std::atomic<bool> initialized_{false};
+  mutable std::mutex mutex_;
 
   friend class NlmStreamHandler;
 };

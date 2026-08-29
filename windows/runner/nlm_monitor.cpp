@@ -8,21 +8,12 @@ namespace {
 
 constexpr char kEventChannelName[] = "ecjtu_auth/network_events";
 constexpr char kMethodChannelName[] = "ecjtu_auth/network_methods";
-
-// NLM_CONNECTIVITY constants (fallback if netlistmgr.h doesn't define them).
-#ifndef NLM_CONNECTIVITY_IPV4_CONNECTED
-constexpr NLM_CONNECTIVITY NLM_CONNECTIVITY_IPV4_CONNECTED =
-    static_cast<NLM_CONNECTIVITY>(0x00000010);
-#endif
-#ifndef NLM_CONNECTIVITY_IPV6_CONNECTED
-constexpr NLM_CONNECTIVITY NLM_CONNECTIVITY_IPV6_CONNECTED =
-    static_cast<NLM_CONNECTIVITY>(0x00000020);
-#endif
+constexpr int kPollIntervalMs = 2000;
 
 }  // namespace
 
 // ---------------------------------------------------------------------------
-// StreamHandler: bridges Flutter EventChannel to the NlmMonitor.
+// StreamHandler.
 // ---------------------------------------------------------------------------
 
 class NlmMonitor::NlmStreamHandler
@@ -51,70 +42,6 @@ class NlmMonitor::NlmStreamHandler
 
  private:
   NlmMonitor* monitor_;
-};
-
-// ---------------------------------------------------------------------------
-// NetworkListManagerEvents: COM callback implementation.
-// ---------------------------------------------------------------------------
-
-class NlmMonitor::NetworkListManagerEvents
-    : public INetworkListManagerEvents {
- public:
-  explicit NetworkListManagerEvents(NlmMonitor* monitor) : monitor_(monitor) {}
-
-  ULONG STDMETHODCALLTYPE AddRef() override {
-    return InterlockedIncrement(&ref_count_);
-  }
-
-  ULONG STDMETHODCALLTYPE Release() override {
-    LONG count = InterlockedDecrement(&ref_count_);
-    if (count == 0) {
-      delete this;
-    }
-    return count;
-  }
-
-  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
-                                           void** ppv) override {
-    if (!ppv) return E_POINTER;
-    *ppv = nullptr;
-
-    if (riid == IID_IUnknown ||
-        riid == IID_INetworkListManagerEvents) {
-      *ppv = static_cast<INetworkListManagerEvents*>(this);
-      AddRef();
-      return S_OK;
-    }
-    return E_NOINTERFACE;
-  }
-
-  HRESULT STDMETHODCALLTYPE NetworkAdded(GUID networkId) override {
-    return S_OK;
-  }
-
-  HRESULT STDMETHODCALLTYPE NetworkRemoved(GUID networkId) override {
-    return S_OK;
-  }
-
-  HRESULT STDMETHODCALLTYPE ConnectivityChanged(
-      NLM_CONNECTIVITY newConnectivity) override {
-    monitor_->OnConnectivityChanged();
-    return S_OK;
-  }
-
-  HRESULT STDMETHODCALLTYPE NetworkConnectionPropertyChanged(
-      GUID networkId, DWORD statusFlags) override {
-    return S_OK;
-  }
-
-  HRESULT STDMETHODCALLTYPE NetworkPropertyChanged(
-      GUID networkId, NLM_ENUM_NETWORK propertyChange) override {
-    return S_OK;
-  }
-
- private:
-  NlmMonitor* monitor_;
-  volatile LONG ref_count_{1};
 };
 
 // ---------------------------------------------------------------------------
@@ -158,176 +85,147 @@ NlmMonitor::~NlmMonitor() {
 void NlmMonitor::Start() {
   if (running_) return;
   running_ = true;
-  StartComThread();
+  poll_thread_ = std::thread(&NlmMonitor::PollLoop, this);
 }
 
 void NlmMonitor::Stop() {
   running_ = false;
-  StopComThread();
-}
-
-// ---------------------------------------------------------------------------
-// COM thread.
-// ---------------------------------------------------------------------------
-
-void NlmMonitor::StartComThread() {
-  com_thread_ = std::thread([this]() {
-    HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-    if (FAILED(hr)) return;
-
-    hr = CoCreateInstance(CLSID_NetworkListManager, nullptr, CLSCTX_SERVER,
-                          IID_INetworkListManager,
-                          reinterpret_cast<void**>(&nlm_));
-    if (FAILED(hr) || !nlm_) {
-      CoUninitialize();
-      return;
-    }
-
-    IConnectionPointContainer* cpc = nullptr;
-    hr = nlm_->QueryInterface(IID_IConnectionPointContainer,
-                              reinterpret_cast<void**>(&cpc));
-    if (FAILED(hr) || !cpc) {
-      nlm_->Release();
-      nlm_ = nullptr;
-      CoUninitialize();
-      return;
-    }
-
-    IConnectionPoint* cp = nullptr;
-    hr = cpc->FindConnectionPoint(IID_INetworkListManagerEvents, &cp);
-    cpc->Release();
-    if (FAILED(hr) || !cp) {
-      nlm_->Release();
-      nlm_ = nullptr;
-      CoUninitialize();
-      return;
-    }
-
-    callback_ = new NetworkListManagerEvents(this);
-
-    hr = cp->Advise(callback_, &cookie_);
-    if (FAILED(hr)) {
-      callback_->Release();
-      callback_ = nullptr;
-      cp->Release();
-      nlm_->Release();
-      nlm_ = nullptr;
-      CoUninitialize();
-      return;
-    }
-
-    connection_point_ = cp;
-
-    {
-      std::lock_guard lock(mutex_);
-      initialized_ = true;
-    }
-
-    MSG msg;
-    while (running_ && GetMessage(&msg, nullptr, 0, 0)) {
-      TranslateMessage(&msg);
-      DispatchMessage(&msg);
-    }
-
-    UnregisterCallback();
-    CoUninitialize();
-  });
-}
-
-void NlmMonitor::StopComThread() {
-  if (com_thread_.joinable()) {
-    DWORD tid = GetThreadId(com_thread_.native_handle());
-    PostThreadMessage(tid, WM_QUIT, 0, 0);
-    com_thread_.join();
-  }
-
-  std::lock_guard lock(mutex_);
-  initialized_ = false;
-}
-
-void NlmMonitor::UnregisterCallback() {
-  if (connection_point_ && cookie_ != 0) {
-    connection_point_->Unadvise(cookie_);
-    cookie_ = 0;
-  }
-  if (connection_point_) {
-    connection_point_->Release();
-    connection_point_ = nullptr;
-  }
-  if (callback_) {
-    callback_->Release();
-    callback_ = nullptr;
-  }
-  if (nlm_) {
-    nlm_->Release();
-    nlm_ = nullptr;
+  if (poll_thread_.joinable()) {
+    poll_thread_.join();
   }
 }
 
 // ---------------------------------------------------------------------------
-// Connectivity changed callback.
+// Background polling loop.
 // ---------------------------------------------------------------------------
 
-void NlmMonitor::OnConnectivityChanged() {
-  if (!nlm_) return;
+void NlmMonitor::PollLoop() {
+  // Initial state check.
+  bool initial = CheckInternetConnectivity();
+  {
+    std::lock_guard lock(mutex_);
+    last_connected_ = initial;
+  }
+  if (initial) {
+    SendEvent("connected", GetConnectedSsid());
+  }
 
-  IEnumNetworkConnections* enum_conns = nullptr;
-  HRESULT hr = nlm_->GetNetworkConnections(&enum_conns);
-  if (FAILED(hr) || !enum_conns) return;
+  while (running_) {
+    Sleep(kPollIntervalMs);
+    if (!running_) break;
 
-  INetworkConnection* conn = nullptr;
-  ULONG fetched = 0;
-  bool found_connected = false;
-  std::string ssid;
+    bool connected = CheckInternetConnectivity();
 
-  while (enum_conns->Next(1, &conn, &fetched) == S_OK && fetched > 0) {
-    NLM_CONNECTIVITY connectivity = NLM_CONNECTIVITY_DISCONNECTED;
-    conn->GetConnectivity(&connectivity);
-
-    bool has_connectivity =
-        (connectivity & NLM_CONNECTIVITY_IPV4_CONNECTED) ||
-        (connectivity & NLM_CONNECTIVITY_IPV6_CONNECTED);
-
-    if (has_connectivity) {
-      found_connected = true;
-      std::wstring wssid = GetSsidForConnection(conn);
-      if (!wssid.empty()) {
-        int len = WideCharToMultiByte(CP_UTF8, 0, wssid.c_str(),
-                                      static_cast<int>(wssid.size()),
-                                      nullptr, 0, nullptr, nullptr);
-        if (len > 0) {
-          ssid.resize(len);
-          WideCharToMultiByte(CP_UTF8, 0, wssid.c_str(),
-                              static_cast<int>(wssid.size()), ssid.data(),
-                              len, nullptr, nullptr);
-        }
+    std::lock_guard lock(mutex_);
+    if (connected != last_connected_) {
+      last_connected_ = connected;
+      if (connected) {
+        // Release lock before sending event to avoid deadlock.
+        lock.~lock_guard();
+        SendEvent("connected", GetConnectedSsid());
+        break;  // break after manual unlock
+      } else {
+        lock.~lock_guard();
+        SendEvent("disconnected", "");
+        break;
       }
-      conn->Release();
-      break;
     }
-    conn->Release();
   }
-  enum_conns->Release();
-
-  SendEvent(found_connected ? "connected" : "disconnected", ssid);
 }
 
-std::wstring NlmMonitor::GetSsidForConnection(INetworkConnection* connection) {
-  if (!connection) return L"";
+// ---------------------------------------------------------------------------
+// Check internet connectivity via adapter status.
+// ---------------------------------------------------------------------------
 
-  INetwork* network = nullptr;
-  HRESULT hr = connection->GetNetwork(&network);
-  if (FAILED(hr) || !network) return L"";
+bool NlmMonitor::CheckInternetConnectivity() {
+  ULONG buf_len = 0;
+  GetAdaptersAddresses(AF_UNSPEC, 0, nullptr, nullptr, &buf_len);
 
-  BSTR name = nullptr;
-  hr = network->GetName(&name);
-  std::wstring result;
-  if (SUCCEEDED(hr) && name) {
-    result.assign(name, SysStringLen(name));
-    SysFreeString(name);
+  if (buf_len == 0) return false;
+
+  std::vector<BYTE> buf(buf_len);
+  auto* adapter = reinterpret_cast<PIP_ADAPTER_ADDRESSES>(buf.data());
+
+  ULONG ret = GetAdaptersAddresses(AF_UNSPEC, 0, nullptr, adapter, &buf_len);
+  if (ret != NO_ERROR) return false;
+
+  for (auto* a = adapter; a != nullptr; a = a->Next) {
+    if (a->OperStatus != IfOperStatusUp) continue;
+    if (a->IfType == IF_TYPE_IEEE80211 ||  // WiFi
+        a->IfType == IF_TYPE_ETHERNET_CSMACD) {  // Ethernet
+      if (a->FirstUnicastAddress != nullptr) {
+        return true;
+      }
+    }
   }
-  network->Release();
-  return result;
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// Get connected SSID via netsh.
+// ---------------------------------------------------------------------------
+
+std::string NlmMonitor::GetConnectedSsid() {
+  // Release mutex before spawning process to avoid blocking.
+  // The result is captured locally.
+  STARTUPINFOW si = {};
+  si.cb = sizeof(si);
+  si.dwFlags = STARTF_USESHOWWINDOW | STARTF_USESTDHANDLES;
+  si.wShowWindow = SW_HIDE;
+
+  HANDLE hRead = nullptr, hWrite = nullptr;
+  SECURITY_ATTRIBUTES sa = {};
+  sa.nLength = sizeof(sa);
+  sa.bInheritHandle = TRUE;
+  if (!CreatePipe(&hRead, &hWrite, &sa, 0)) return "";
+
+  si.hStdOutput = hWrite;
+  si.hStdError = hWrite;
+
+  PROCESS_INFORMATION pi = {};
+  BOOL ok = CreateProcessW(
+      nullptr,
+      L"cmd.exe /c netsh wlan show interfaces",
+      nullptr, nullptr, TRUE,
+      CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
+
+  CloseHandle(hWrite);
+  if (!ok) {
+    CloseHandle(hRead);
+    return "";
+  }
+
+  WaitForSingleObject(pi.hProcess, 3000);
+  CloseHandle(pi.hProcess);
+  CloseHandle(pi.hThread);
+
+  char buf[4096] = {};
+  DWORD read_bytes = 0;
+  ReadFile(hRead, buf, sizeof(buf) - 1, &read_bytes, nullptr);
+  CloseHandle(hRead);
+
+  std::string output(buf, read_bytes);
+  std::string ssid;
+  for (size_t pos = 0; pos < output.size();) {
+    size_t eol = output.find('\n', pos);
+    if (eol == std::string::npos) eol = output.size();
+    std::string line = output.substr(pos, eol - pos);
+    pos = eol + 1;
+
+    if (line.find("SSID") != std::string::npos &&
+        line.find("BSSID") == std::string::npos) {
+      size_t colon = line.find(':');
+      if (colon != std::string::npos && colon + 1 < line.size()) {
+        ssid = line.substr(colon + 1);
+        // Trim whitespace.
+        while (!ssid.empty() && ssid.back() == '\r') ssid.pop_back();
+        size_t start = ssid.find_first_not_of(' ');
+        if (start != std::string::npos) ssid = ssid.substr(start);
+        break;
+      }
+    }
+  }
+  return ssid;
 }
 
 // ---------------------------------------------------------------------------
@@ -349,46 +247,9 @@ void NlmMonitor::SendEvent(const std::string& event_type,
 }
 
 // ---------------------------------------------------------------------------
-// Query current SSID.
+// Query current SSID (called from Dart).
 // ---------------------------------------------------------------------------
 
 std::string NlmMonitor::GetCurrentSsid() {
-  std::lock_guard lock(mutex_);
-  if (!initialized_ || !nlm_) return "";
-
-  IEnumNetworkConnections* enum_conns = nullptr;
-  HRESULT hr = nlm_->GetNetworkConnections(&enum_conns);
-  if (FAILED(hr) || !enum_conns) return "";
-
-  std::string ssid;
-  INetworkConnection* conn = nullptr;
-  ULONG fetched = 0;
-  while (enum_conns->Next(1, &conn, &fetched) == S_OK && fetched > 0) {
-    NLM_CONNECTIVITY connectivity = NLM_CONNECTIVITY_DISCONNECTED;
-    conn->GetConnectivity(&connectivity);
-
-    bool has_connectivity =
-        (connectivity & NLM_CONNECTIVITY_IPV4_CONNECTED) ||
-        (connectivity & NLM_CONNECTIVITY_IPV6_CONNECTED);
-
-    if (has_connectivity) {
-      std::wstring wssid = GetSsidForConnection(conn);
-      if (!wssid.empty()) {
-        int len = WideCharToMultiByte(CP_UTF8, 0, wssid.c_str(),
-                                      static_cast<int>(wssid.size()),
-                                      nullptr, 0, nullptr, nullptr);
-        if (len > 0) {
-          ssid.resize(len);
-          WideCharToMultiByte(CP_UTF8, 0, wssid.c_str(),
-                              static_cast<int>(wssid.size()), ssid.data(),
-                              len, nullptr, nullptr);
-        }
-      }
-      conn->Release();
-      break;
-    }
-    conn->Release();
-  }
-  enum_conns->Release();
-  return ssid;
+  return GetConnectedSsid();
 }
