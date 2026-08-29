@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import '../core/eportal_client.dart';
 import '../core/network_checker.dart';
 import '../models/net_state.dart';
+import '../platform/nlm_service.dart';
 import 'credential_store.dart';
 import 'settings_store.dart';
 
@@ -17,15 +18,21 @@ class AutoConnectService extends ChangeNotifier {
     required NetworkChecker checker,
     required CredentialStore credentials,
     required SettingsStore settings,
+    NlmService? nlmService,
   })  : _eportal = eportal,
         _checker = checker,
         _credentials = credentials,
-        settingsStore = settings;
+        settingsStore = settings,
+        _nlmService = nlmService {
+    _nlmSubscription = _nlmService?.onNetworkChanged.listen(_onNetworkEvent);
+  }
 
   final EportalClient _eportal;
   final NetworkChecker _checker;
   final CredentialStore _credentials;
   final SettingsStore settingsStore;
+  final NlmService? _nlmService;
+  StreamSubscription<NlmNetworkEvent>? _nlmSubscription;
 
   /// 暴露 eportal 客户端（供设置页使用）。
   EportalClient get eportal => _eportal;
@@ -272,12 +279,25 @@ class AutoConnectService extends ChangeNotifier {
     }
   }
 
+  /// NLM 网络事件回调：网络变化时检测并重连。
+  void _onNetworkEvent(NlmNetworkEvent event) {
+    log('NLM 事件: ${event.event} (ssid=${event.ssid})');
+    if (event.isConnected) {
+      // 网络连接 → 检测是否在线，不在线则认证。
+      connectOnce();
+    } else if (event.isDisconnected) {
+      // 网络断开 → 标记状态。
+      _updateState(NetState.noCampusWifi);
+    }
+  }
+
   /// 由平台层注入的 WiFi 名获取函数（测试中可置 null）。
   static Future<String?> Function()? currentSsid;
 
   @override
   void dispose() {
     _retryTimer?.cancel();
+    _nlmSubscription?.cancel();
     super.dispose();
   }
 }

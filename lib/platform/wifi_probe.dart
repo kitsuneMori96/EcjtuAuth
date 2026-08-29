@@ -2,17 +2,25 @@ import 'dart:io';
 
 import 'package:network_info_plus/network_info_plus.dart';
 
-/// 获取当前连接的 WiFi SSID。
-/// Android 需要定位权限；Windows 优先插件、失败时回退 netsh 解析。
-class WifiProbe {
-  const WifiProbe();
+import 'nlm_service.dart';
 
+/// 获取当前连接的 WiFi SSID。
+/// Android 需要定位权限；Windows 优先 NLM（事件驱动），失败时回退 netsh。
+class WifiProbe {
+  WifiProbe({NlmService? nlmService}) : _nlmService = nlmService;
+
+  final NlmService? _nlmService;
   static final NetworkInfo _info = NetworkInfo();
 
   Future<String?> currentSsid() async {
     if (Platform.isWindows) {
-      final viaPlugin = await _safePlugin();
-      if (viaPlugin != null) return viaPlugin;
+      // 优先用 NLM MethodChannel 获取 SSID。
+      final nlm = _nlmService;
+      if (nlm != null) {
+        final viaNlm = await nlm.getCurrentSsid();
+        if (viaNlm != null && viaNlm.isNotEmpty) return viaNlm;
+      }
+      // 回退到 netsh。
       return _viaNetsh();
     }
     return _safePlugin();

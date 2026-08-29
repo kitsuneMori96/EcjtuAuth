@@ -5,6 +5,7 @@ import 'core/app_config.dart';
 import 'core/eportal_client.dart';
 import 'core/network_checker.dart';
 import 'platform/desktop_service.dart';
+import 'platform/nlm_service.dart';
 import 'platform/wifi_probe.dart';
 import 'services/auto_connect.dart';
 import 'services/credential_store.dart';
@@ -36,19 +37,23 @@ class EcjtuAuthApp extends StatefulWidget {
 
 class _EcjtuAuthAppState extends State<EcjtuAuthApp> {
   late final AutoConnectService service;
+  late final NlmService nlmService;
 
   @override
   void initState() {
     super.initState();
+    nlmService = NlmService();
+    nlmService.startListening();
+
     final eportal = EportalClient(config: const AppConfig());
     service = AutoConnectService(
       eportal: eportal,
       checker: NetworkChecker(eportal: eportal, config: const AppConfig()),
       credentials: CredentialStore(),
       settings: SettingsStore(widget.prefs),
+      nlmService: nlmService,
     );
     service.loadSettings().then((_) {
-      // 启动时直接尝试连接（不等 UI）
       _autoConnectOnStartup();
       if (service.settings.autoRetry) {
         service.startAutoRetry();
@@ -84,6 +89,7 @@ class _EcjtuAuthAppState extends State<EcjtuAuthApp> {
 
   @override
   void dispose() {
+    nlmService.dispose();
     service.dispose();
     super.dispose();
   }
