@@ -82,6 +82,28 @@ bool ParseConnected(const std::string& output) {
          output.find("connected") != std::string::npos;
 }
 
+std::string ParseEthernetName(const std::string& output) {
+  for (size_t pos = 0; pos < output.size();) {
+    size_t eol = output.find('\n', pos);
+    if (eol == std::string::npos) eol = output.size();
+    std::string line = output.substr(pos, eol - pos);
+    pos = eol + 1;
+
+    bool isEthernet = (line.find("以太网") != std::string::npos ||
+                       line.find("Ethernet") != std::string::npos);
+    if (!isEthernet) continue;
+
+    bool isEnabled = (line.find("已启用") != std::string::npos ||
+                      line.find("Enabled") != std::string::npos);
+    if (!isEnabled) continue;
+
+    bool isConnected = (line.find("已连接") != std::string::npos ||
+                        line.find("Connected") != std::string::npos);
+    if (isConnected) return "以太网";
+  }
+  return "";
+}
+
 }  // namespace
 
 // ---------------------------------------------------------------------------
@@ -158,7 +180,11 @@ void NlmMonitor::Start() {
   if (running_) return;
   running_ = true;
 
-  auto [connected, ssid] = GetWifiStatus();
+  auto [wifiConnected, wifiSsid] = GetWifiStatus();
+  auto [ethConnected, ethName] = GetEthernetStatus();
+  bool connected = wifiConnected || ethConnected;
+  std::string ssid = wifiConnected ? wifiSsid : (ethConnected ? ethName : "");
+
   {
     std::lock_guard lock(mutex_);
     last_connected_ = connected;
@@ -191,6 +217,13 @@ std::pair<bool, std::string> NlmMonitor::GetWifiStatus() {
   return {connected, ssid};
 }
 
+std::pair<bool, std::string> NlmMonitor::GetEthernetStatus() {
+  std::string output =
+      RunCommand(L"cmd.exe /c netsh interface show interface");
+  std::string name = ParseEthernetName(output);
+  return {!name.empty(), name};
+}
+
 // ---------------------------------------------------------------------------
 // Background polling loop.
 // ---------------------------------------------------------------------------
@@ -200,7 +233,11 @@ void NlmMonitor::PollLoop() {
     Sleep(kPollIntervalMs);
     if (!running_) break;
 
-    auto [connected, ssid] = GetWifiStatus();
+    auto [wifiConnected, wifiSsid] = GetWifiStatus();
+    auto [ethConnected, ethName] = GetEthernetStatus();
+
+    bool connected = wifiConnected || ethConnected;
+    std::string ssid = wifiConnected ? wifiSsid : (ethConnected ? ethName : "");
 
     bool changed = false;
     {
@@ -244,6 +281,11 @@ void NlmMonitor::SendEvent(const std::string& event_type,
 // ---------------------------------------------------------------------------
 
 std::string NlmMonitor::GetCurrentSsid() {
-  auto [connected, ssid] = GetWifiStatus();
-  return ssid;
+  auto [wifiConnected, wifiSsid] = GetWifiStatus();
+  if (wifiConnected && !wifiSsid.empty()) return wifiSsid;
+
+  auto [ethConnected, ethName] = GetEthernetStatus();
+  if (ethConnected && !ethName.empty()) return ethName;
+
+  return "";
 }

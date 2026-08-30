@@ -31,6 +31,7 @@ class NlmMonitor {
 
   void PollLoop();
   std::pair<bool, std::string> GetWifiStatus();
+  std::pair<bool, std::string> GetEthernetStatus();
   void SendEvent(const std::string& event_type, const std::string& ssid);
 
   flutter::BinaryMessenger* messenger_;
