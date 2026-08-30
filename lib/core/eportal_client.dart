@@ -35,15 +35,26 @@ class EportalClient {
         query,
       );
 
-  /// 拉取 portal 页面原文；不可达时抛出异常。
+  /// 拉取 portal 页面原文；不可达时抛出异常。失败后自动重试 1 次。
   Future<String> fetchPortalPage() async {
-    final res = await _client
-        .get(portalUri, headers: requestHeaders)
-        .timeout(config.requestTimeout);
-    if (res.statusCode != 200) {
-      throw http.ClientException('portal responded ${res.statusCode}');
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        final res = await _client
+            .get(portalUri, headers: requestHeaders)
+            .timeout(config.requestTimeout);
+        if (res.statusCode != 200) {
+          throw http.ClientException('portal responded ${res.statusCode}');
+        }
+        return res.body;
+      } catch (e) {
+        if (attempt == 0) {
+          await Future.delayed(const Duration(milliseconds: 500));
+          continue;
+        }
+        rethrow;
+      }
     }
-    return res.body;
+    throw http.ClientException('portal fetch failed after retries');
   }
 
   /// 从 portal 页面提取本机在校园网内的 IP（已 trim）。

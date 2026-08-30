@@ -12,7 +12,7 @@ class AppConfig {
   static const int portalPort = 801;
   static const String defaultSsidCampus = 'ECJTU-Stu';
   static const String defaultSsidFree = 'EcjtuLib_Free';
-  static const Duration defaultRequestTimeout = Duration(milliseconds: 500);
+  static const Duration defaultRequestTimeout = Duration(seconds: 3);
 
   final String portalHost;
   final String ssidCampus;

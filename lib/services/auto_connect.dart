@@ -102,6 +102,7 @@ class AutoConnectService extends ChangeNotifier {
       portalBody = await _eportal.fetchPortalPage();
     } catch (e) {
       log('${portalSw.elapsedMilliseconds}ms | portal 不可达: $e');
+      _updateState(NetState.noCampusWifi);
       return ConnectOutcome.notOnCampus;
     }
     log('${portalSw.elapsedMilliseconds}ms | portal 获取成功 (${portalBody.length} chars)');

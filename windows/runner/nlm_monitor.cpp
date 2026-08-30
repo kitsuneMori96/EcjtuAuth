@@ -78,8 +78,8 @@ std::string ParseSsid(const std::string& output) {
 }
 
 bool ParseConnected(const std::string& output) {
-  return output.find("已断开连接") == std::string::npos &&
-         output.find("disconnected") == std::string::npos;
+  return output.find("已连接") != std::string::npos ||
+         output.find("connected") != std::string::npos;
 }
 
 }  // namespace
