@@ -72,9 +72,9 @@ class _EcjtuAuthAppState extends State<EcjtuAuthApp> {
         cleanSsid.contains(service.settings.ssidFree)) {
       service.log('检测到校园 WiFi: $cleanSsid，尝试连接');
       service.connectNow();
-    } else if (cleanSsid.isEmpty || cleanSsid == 'Ethernet') {
-      // 有线连接：无 SSID 或适配器名为 Ethernet，直接尝试 portal 检测
-      service.log('未检测到校园 WiFi，尝试有线 portal 检测');
+    } else if (cleanSsid.isEmpty) {
+      // 无 SSID → 可能是有线连接，尝试 portal 检测
+      service.log('未检测到校园 WiFi，尝试连接');
       service.connectNow();
     }
   }

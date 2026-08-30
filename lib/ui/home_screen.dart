@@ -57,7 +57,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> _refreshSsid() async {
     try {
       final ssid = await _wifiProbe.currentSsid();
-      if (mounted) setState(() => _ssid = _cleanSsid(ssid));
+      if (mounted) {
+        final clean = _cleanSsid(ssid);
+        // 在线但无 SSID → 有线连接
+        if (clean == null && widget.service.state == NetState.online) {
+          setState(() => _ssid = '以太网');
+        } else {
+          setState(() => _ssid = clean);
+        }
+      }
     } catch (_) {}
   }
 
