@@ -78,8 +78,8 @@ std::string ParseSsid(const std::string& output) {
 }
 
 bool ParseConnected(const std::string& output) {
-  return output.find("已连接") != std::string::npos ||
-         output.find("connected") != std::string::npos;
+  return output.find("connected") != std::string::npos ||
+         output.find("Connected") != std::string::npos;
 }
 
 std::string ParseEthernetName(const std::string& output) {
@@ -89,17 +89,14 @@ std::string ParseEthernetName(const std::string& output) {
     std::string line = output.substr(pos, eol - pos);
     pos = eol + 1;
 
-    bool isEthernet = (line.find("以太网") != std::string::npos ||
-                       line.find("Ethernet") != std::string::npos);
+    bool isEthernet = (line.find("Ethernet") != std::string::npos);
     if (!isEthernet) continue;
 
-    bool isEnabled = (line.find("已启用") != std::string::npos ||
-                      line.find("Enabled") != std::string::npos);
+    bool isEnabled = (line.find("Enabled") != std::string::npos);
     if (!isEnabled) continue;
 
-    bool isConnected = (line.find("已连接") != std::string::npos ||
-                        line.find("Connected") != std::string::npos);
-    if (isConnected) return "以太网";
+    bool isConnected = (line.find("Connected") != std::string::npos);
+    if (isConnected) return "Ethernet";
   }
   return "";
 }
@@ -208,7 +205,8 @@ void NlmMonitor::Stop() {
 // ---------------------------------------------------------------------------
 
 std::pair<bool, std::string> NlmMonitor::GetWifiStatus() {
-  std::string output = RunCommand(L"cmd.exe /c netsh wlan show interfaces");
+  std::string output = RunCommand(
+      L"cmd.exe /c \"chcp 65001 >nul & netsh wlan show interfaces\"");
   bool connected = ParseConnected(output);
   std::string ssid;
   if (connected) {
@@ -218,8 +216,8 @@ std::pair<bool, std::string> NlmMonitor::GetWifiStatus() {
 }
 
 std::pair<bool, std::string> NlmMonitor::GetEthernetStatus() {
-  std::string output =
-      RunCommand(L"cmd.exe /c netsh interface show interface");
+  std::string output = RunCommand(
+      L"cmd.exe /c \"chcp 65001 >nul & netsh interface show interface\"");
   std::string name = ParseEthernetName(output);
   return {!name.empty(), name};
 }
