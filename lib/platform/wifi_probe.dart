@@ -37,8 +37,8 @@ class WifiProbe {
   Future<String?> _viaNetsh() async {
     try {
       final result = await Process.run(
-        'netsh',
-        ['wlan', 'show', 'interfaces'],
+        'cmd.exe',
+        ['/c', 'chcp 65001 >nul & netsh wlan show interfaces'],
         stdoutEncoding: systemEncoding,
       );
       for (final line in result.stdout.toString().split('\n')) {
