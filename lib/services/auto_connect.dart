@@ -292,6 +292,14 @@ class AutoConnectService extends ChangeNotifier {
     }
   }
 
+  /// 休眠唤醒后强制重新认证：延迟等待网络就绪，再走 connectNow。
+  Future<void> reconnectAfterWake() async {
+    log('休眠唤醒，5 秒后重新认证...');
+    _updateState(NetState.checking);
+    await Future.delayed(const Duration(seconds: 5));
+    await connectNow();
+  }
+
   /// 由平台层注入的 WiFi 名获取函数（测试中可置 null）。
   static Future<String?> Function()? currentSsid;
 
