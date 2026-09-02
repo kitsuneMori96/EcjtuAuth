@@ -7,6 +7,7 @@
 
 #include <memory>
 
+#include "nlm_monitor.h"
 #include "win32_window.h"
 
 class FlutterWindow : public Win32Window {
@@ -21,6 +22,8 @@ class FlutterWindow : public Win32Window {
     return nullptr;
   }
 
+  void SetNlmMonitor(NlmMonitor* monitor) { nlm_monitor_ = monitor; }
+
  protected:
   bool OnCreate() override;
   void OnDestroy() override;
@@ -30,6 +33,7 @@ class FlutterWindow : public Win32Window {
  private:
   flutter::DartProject project_;
   std::unique_ptr<flutter::FlutterViewController> flutter_controller_;
+  NlmMonitor* nlm_monitor_ = nullptr;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

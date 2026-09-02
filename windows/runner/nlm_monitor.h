@@ -26,6 +26,9 @@ class NlmMonitor {
 
   std::string GetCurrentSsid();
 
+  void SendWakeEvent();
+  void SendSuspendEvent();
+
  private:
   class NlmStreamHandler;
 

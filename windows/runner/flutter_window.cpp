@@ -65,6 +65,15 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     case WM_FONTCHANGE:
       flutter_controller_->engine()->ReloadSystemFonts();
       break;
+    case WM_POWERBROADCAST:
+      if (nlm_monitor_) {
+        if (wparam == PBT_APMRESUMEAUTOMATIC) {
+          nlm_monitor_->SendWakeEvent();
+        } else if (wparam == PBT_APMSUSPEND) {
+          nlm_monitor_->SendSuspendEvent();
+        }
+      }
+      break;
   }
 
   return Win32Window::MessageHandler(hwnd, message, wparam, lparam);

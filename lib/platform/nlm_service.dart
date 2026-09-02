@@ -11,6 +11,8 @@ class NlmNetworkEvent {
 
   bool get isConnected => event == 'connected';
   bool get isDisconnected => event == 'disconnected';
+  bool get isWake => event == 'wake';
+  bool get isSuspend => event == 'suspend';
 
   @override
   String toString() => 'NlmNetworkEvent($event, ssid=$ssid)';

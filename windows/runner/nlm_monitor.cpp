@@ -248,3 +248,33 @@ std::string NlmMonitor::GetCurrentSsid() {
   auto [wifiConnected, wifiSsid] = GetWifiStatus();
   return wifiConnected ? wifiSsid : "";
 }
+
+// ---------------------------------------------------------------------------
+// Send wake/suspend event to Dart (called from WM_POWERBROADCAST).
+// ---------------------------------------------------------------------------
+
+void NlmMonitor::SendWakeEvent() {
+  std::lock_guard lock(mutex_);
+  if (!event_sink_) return;
+
+  flutter::EncodableMap map;
+  map[flutter::EncodableValue("event")] =
+      flutter::EncodableValue("wake");
+  map[flutter::EncodableValue("ssid")] =
+      flutter::EncodableValue("");
+
+  event_sink_->Success(flutter::EncodableValue(map));
+}
+
+void NlmMonitor::SendSuspendEvent() {
+  std::lock_guard lock(mutex_);
+  if (!event_sink_) return;
+
+  flutter::EncodableMap map;
+  map[flutter::EncodableValue("event")] =
+      flutter::EncodableValue("suspend");
+  map[flutter::EncodableValue("ssid")] =
+      flutter::EncodableValue("");
+
+  event_sink_->Success(flutter::EncodableValue(map));
+}

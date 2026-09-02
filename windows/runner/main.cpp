@@ -33,6 +33,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   auto* messenger = window.GetMessenger();
   if (messenger) {
     nlm_monitor = std::make_unique<NlmMonitor>(messenger);
+    window.SetNlmMonitor(nlm_monitor.get());
     nlm_monitor->Start();
   }
 

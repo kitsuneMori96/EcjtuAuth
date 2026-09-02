@@ -43,23 +43,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     widget.service.connectNow();
   }
 
-  DateTime? _pausedAt;
-
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused) {
-      _pausedAt = DateTime.now();
-    } else if (state == AppLifecycleState.resumed) {
+    if (state == AppLifecycleState.resumed) {
       _refreshSsid();
       if (widget.service.settings.autoConnectOnResume) {
-        final pausedDuration = _pausedAt != null
-            ? DateTime.now().difference(_pausedAt!)
-            : Duration.zero;
-        if (pausedDuration > const Duration(seconds: 30)) {
-          widget.service.reconnectAfterWake();
-        } else {
-          widget.service.connectNow();
-        }
+        widget.service.connectNow();
       }
     }
   }

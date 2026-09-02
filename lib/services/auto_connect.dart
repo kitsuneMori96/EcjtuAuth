@@ -283,20 +283,29 @@ class AutoConnectService extends ChangeNotifier {
   /// NLM 网络事件回调：网络变化时检测并重连。
   void _onNetworkEvent(NlmNetworkEvent event) {
     log('NLM 事件: ${event.event} (ssid=${event.ssid})');
-    if (event.isConnected) {
-      // 网络连接 → 检测是否在线，不在线则认证。
+    if (event.isWake) {
+      final now = DateTime.now();
+      if (_lastWakeAt != null && now.difference(_lastWakeAt!) < const Duration(seconds: 5)) {
+        log('唤醒事件去抖，忽略');
+        return;
+      }
+      _lastWakeAt = now;
+      log('检测到休眠唤醒，2 秒后重新认证...');
+      Future.delayed(const Duration(seconds: 2), () {
+        if (state != NetState.online) reconnectAfterWake();
+      });
+    } else if (event.isConnected) {
       connectOnce();
     } else if (event.isDisconnected) {
-      // 网络断开 → 标记状态。
       _updateState(NetState.noCampusWifi);
     }
   }
 
+  DateTime? _lastWakeAt;
+
   /// 休眠唤醒后强制重新认证：延迟等待网络就绪，再走 connectNow。
   Future<void> reconnectAfterWake() async {
-    log('休眠唤醒，5 秒后重新认证...');
     _updateState(NetState.checking);
-    await Future.delayed(const Duration(seconds: 5));
     await connectNow();
   }
 
