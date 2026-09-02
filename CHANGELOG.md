@@ -1,14 +1,16 @@
 # 更新日志
 
-> 当前处于 **Beta 预发布**阶段，版本号及功能尚在迭代，正式版发布前可能有较多变动。
-
-## v1.1.0 - 2026-08-30
+## v1.1.0 - 2026-09-02
 
 ### 新增
 
-- **Windows NLM 网络事件监听**：使用后台 netsh 轮询实现事件驱动的网络状态检测
+- **Windows 原生电源事件唤醒重连**：通过 `WM_POWERBROADCAST` (PBT_APMRESUMEAUTOMATIC) 检测休眠唤醒，自动重新认证
+  - 去抖 5 秒防止重复触发
+  - 延迟 2 秒等待网络栈恢复
+- **有线网络（以太网）支持**：在线但无 SSID 时自动识别为以太网连接
+- **Windows NLM 网络事件监听**：后台 netsh 轮询实现事件驱动的网络状态检测
   - 后台线程每 2s 检测连接状态，变化时自动触发认证
-  - MethodChannel 提供 SSID 查询（替代不可靠的 network_info_plus）
+  - MethodChannel 提供 SSID 查询
 - **集成 EportalAnalyzerFlutter**：Dr.COM eportal 分析工具移入 `tools/EportalAnalyzer/`，清除硬编码账密
 
 ### 修复
@@ -20,6 +22,7 @@
 - **在线检测误判**：自动保存指纹可能在已登录状态下存错值，改为用户手动校准离线页面长度
 - **焦点变化重复登录**：`_doLogin()` 加入 online 检查，已在线时不发 POST
 - **登录成功判断**：302 重定向视为请求成功（不代表登录成功），登录成功通过页面长度变化判断
+- **GBK 编码问题**：所有 netsh 命令使用 `chcp 65001` 强制 UTF-8 输出
 
 ### 优化
 
