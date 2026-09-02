@@ -31,7 +31,3 @@
 - **在线检测改为长度对比**：更轻量、更可靠
 - **超时调整**：700ms → 3s（校园网慢时不超时）
 - 设置页新增「在线检测校准」section，用户可手动获取离线页面长度
-
-## v1.0.0 - 2026-08-26
-
-首个发布版本。基于 [Apauto-to-all/AutoAuthorize](https://github.com/Apauto-to-all/AutoAuthorize) 全面重写，单一 Flutter 代码库覆盖 Windows 与 Android。
