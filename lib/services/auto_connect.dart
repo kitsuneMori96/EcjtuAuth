@@ -303,10 +303,21 @@ class AutoConnectService extends ChangeNotifier {
 
   DateTime? _lastWakeAt;
 
-  /// 休眠唤醒后强制重新认证：延迟等待网络就绪，再走 connectNow。
+  /// 休眠唤醒后强制重新认证：最多重试 3 次，间隔 5 秒。
   Future<void> reconnectAfterWake() async {
     _updateState(NetState.checking);
-    await connectNow();
+    for (var i = 0; i < 3; i++) {
+      final outcome = await connectNow();
+      if (outcome.isGood || state == NetState.online) {
+        log('唤醒后认证成功');
+        return;
+      }
+      if (i < 2) {
+        log('唤醒后认证失败，5 秒后重试 (${i + 1}/3)...');
+        await Future.delayed(const Duration(seconds: 5));
+      }
+    }
+    log('唤醒后认证最终失败，请手动重试');
   }
 
   /// 由平台层注入的 WiFi 名获取函数（测试中可置 null）。
