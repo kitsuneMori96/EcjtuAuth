@@ -290,6 +290,7 @@ class AutoConnectService extends ChangeNotifier {
         return;
       }
       _lastWakeAt = now;
+      _updateState(NetState.checking);
       log('检测到休眠唤醒，2 秒后重新认证...');
       Future.delayed(const Duration(seconds: 2), () {
         if (state != NetState.online) reconnectAfterWake();
