@@ -119,6 +119,10 @@ class AutoConnectService extends ChangeNotifier {
     // 判断在线状态
     if (_checker.offlinePageLength != null && portalBody.length != _checker.offlinePageLength) {
       _attempt = 0;
+      // 认证成功，趁网络可用补一次基准
+      if (_settingsLoaded.offlinePageLength == null) {
+        await fetchLengthFromRepo();
+      }
       _updateState(NetState.online);
       return ConnectOutcome.alreadyOnline;
     }
@@ -189,7 +193,11 @@ class AutoConnectService extends ChangeNotifier {
     notifyListeners();
     final totalSw = Stopwatch()..start();
     try {
-      return await _doLogin(totalSw);
+      return await _doLogin(totalSw).timeout(const Duration(seconds: 20));
+    } on TimeoutException {
+      log('连接超时（20s），请重试');
+      _updateState(NetState.noCampusWifi);
+      return ConnectOutcome.notOnCampus;
     } finally {
       busy = false;
       notifyListeners();
@@ -249,10 +257,14 @@ class AutoConnectService extends ChangeNotifier {
     notifyListeners();
     final sw = Stopwatch()..start();
     try {
-      final s = await _safeCheck();
+      final s = await _safeCheck().timeout(const Duration(seconds: 20));
       log('${sw.elapsedMilliseconds}ms | 刷新状态 → ${s.label}');
       _updateState(s);
       return s;
+    } on TimeoutException {
+      log('状态检测超时（20s）');
+      _updateState(NetState.noCampusWifi);
+      return NetState.noCampusWifi;
     } finally {
       busy = false;
       notifyListeners();

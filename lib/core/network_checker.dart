@@ -1,3 +1,5 @@
+import 'package:http/http.dart' as http;
+
 import 'app_config.dart';
 import 'eportal_client.dart';
 import '../models/net_state.dart';
@@ -17,8 +19,23 @@ class NetworkChecker {
   final EportalClient _eportal;
   final AppConfig config;
 
+  static const _repoLengthUrl =
+      'https://raw.githubusercontent.com/kitsuneMori96/EcjtuAuth/main/portal_length.txt';
+
   /// 校准后的离线页面长度（由 settings 传入）。
   int? offlinePageLength;
+
+  /// 从公网仓库拉取基准长度，短超时，失败静默。
+  Future<void> _tryFetchBaseline() async {
+    try {
+      final res = await http.get(Uri.parse(_repoLengthUrl))
+          .timeout(const Duration(seconds: 5));
+      if (res.statusCode != 200) return;
+      final length = int.tryParse(res.body.trim());
+      if (length == null || length <= 0) return;
+      offlinePageLength = length;
+    } catch (_) {}
+  }
 
   Future<NetState> check() async {
     String portalBody;
@@ -28,9 +45,12 @@ class NetworkChecker {
       return NetState.noCampusWifi;
     }
 
-    // 未校准：默认视为离线
+    // 未校准：趁网络可用补一次基准
     if (offlinePageLength == null) {
-      return NetState.campusBlocked;
+      await _tryFetchBaseline();
+      if (offlinePageLength == null) {
+        return NetState.campusBlocked;
+      }
     }
 
     // 对比长度
