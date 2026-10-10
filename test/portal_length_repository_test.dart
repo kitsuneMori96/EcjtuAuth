@@ -12,7 +12,9 @@ MockClient mockRouter(
 }) {
   return MockClient((req) async {
     final host = req.url.host;
-    hits?[host] = (hits?[host] ?? 0) + 1;
+    if (hits != null) {
+      hits[host] = (hits[host] ?? 0) + 1;
+    }
     if (throwsOn?.contains(host) ?? false) {
       throw http.ClientException('mock network error', req.url);
     }
