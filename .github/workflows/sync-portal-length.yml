@@ -17,7 +17,7 @@ jobs:
         run: |
           set -e
           git clone --depth 1 \
-            "https://EcjtuAuth-sync:${GITEE_TOKEN}@gitee.com/kitsuneMori/EcjtuAuth-portal.git" \
+            "https://kitsuneMori:${GITEE_TOKEN}@gitee.com/kitsuneMori/EcjtuAuth-portal.git" \
             /tmp/gitee-portal
           cp portal_length.txt /tmp/gitee-portal/
           cd /tmp/gitee-portal
