@@ -9,9 +9,12 @@ import '../services/settings_store.dart';
 
 /// 设置页：认证服务器 / SSID / 自动重连 / 开机自启。
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key, required this.service});
+  const SettingsScreen({super.key, required this.service, this.fetchLength});
 
   final AutoConnectService service;
+
+  /// 离线长度拉取函数（默认走 [PortalLengthRepository]，仅供测试注入）。
+  final Future<(int, String)?> Function()? fetchLength;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -69,7 +72,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _fetchLengthFromRepo() async {
     setState(() => _fetchingLength = true);
     try {
-      final result = await PortalLengthRepository.fetch();
+      final fetch = widget.fetchLength ?? PortalLengthRepository.fetch;
+      final result = await fetch();
       if (result == null) {
         throw Exception('Gitee/GitHub 均不可用');
       }

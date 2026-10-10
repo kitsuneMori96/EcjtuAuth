@@ -19,24 +19,32 @@ class PortalLengthRepository {
   /// 按优先级依次尝试各数据源。
   ///
   /// 返回 `(长度, 源标识)`；全部源失败返回 null。
+  /// [client] 仅供测试注入，默认使用独立 [http.Client]。
   static Future<(int, String)?> fetch({
+    http.Client? client,
     Duration timeout = const Duration(seconds: 5),
   }) async {
-    const sources = <String, String>{
-      'Gitee': giteeUrl,
-      'GitHub': githubUrl,
-    };
-    for (final entry in sources.entries) {
-      try {
-        final res = await http.get(Uri.parse(entry.value)).timeout(timeout);
-        if (res.statusCode != 200) continue;
-        final length = int.tryParse(res.body.trim());
-        if (length == null || length <= 0) continue;
-        return (length, entry.key);
-      } catch (_) {
-        // 尝试下一个源
+    final c = client ?? http.Client();
+    final owned = client == null;
+    try {
+      const sources = <String, String>{
+        'Gitee': giteeUrl,
+        'GitHub': githubUrl,
+      };
+      for (final entry in sources.entries) {
+        try {
+          final res = await c.get(Uri.parse(entry.value)).timeout(timeout);
+          if (res.statusCode != 200) continue;
+          final length = int.tryParse(res.body.trim());
+          if (length == null || length <= 0) continue;
+          return (length, entry.key);
+        } catch (_) {
+          // 尝试下一个源
+        }
       }
+      return null;
+    } finally {
+      if (owned) c.close();
     }
-    return null;
   }
 }
