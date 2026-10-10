@@ -42,6 +42,24 @@ if [[ -z "$WIN_ZIP" ]]; then
   exit 1
 fi
 
+# ─── 提取当前版本的 CHANGELOG 章节 ────────────────────
+NOTES_FILE="${WORK_DIR}/notes.md"
+awk -v ver="$VERSION" '
+  /^## / {
+    if (in_section) exit
+    if ($0 ~ "## " ver) in_section=1
+  }
+  in_section { print }
+' "${REPO_DIR}/CHANGELOG.md" > "$NOTES_FILE"
+
+if [[ ! -s "$NOTES_FILE" ]]; then
+  echo "⚠️ CHANGELOG 中未找到 ${VERSION} 章节，使用全部内容"
+  cp "${REPO_DIR}/CHANGELOG.md" "$NOTES_FILE"
+fi
+
+echo "📋 release notes:"
+cat "$NOTES_FILE"
+
 # ─── 删除旧 release（如果存在）──────────────────────
 if gh release view "$VERSION" --repo "$REPO" >/dev/null 2>&1; then
   echo "🗑️ 删除旧 release ${VERSION}"
@@ -53,7 +71,7 @@ ARGS=(
   --repo "$REPO"
   --title "v${VERSION}"
   --prerelease
-  --notes-file "${REPO_DIR}/CHANGELOG.md"
+  --notes-file "$NOTES_FILE"
   "$WIN_ZIP"
 )
 
