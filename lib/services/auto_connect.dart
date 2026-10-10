@@ -2,10 +2,10 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 
 import '../core/eportal_client.dart';
 import '../core/network_checker.dart';
+import '../core/portal_length_repository.dart';
 import '../models/net_state.dart';
 import '../platform/nlm_service.dart';
 import 'credential_store.dart';
@@ -53,23 +53,17 @@ class AutoConnectService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 从仓库获取最新的离线页面长度。
-  static const _repoLengthUrl =
-      'https://raw.githubusercontent.com/kitsuneMori96/EcjtuAuth/main/portal_length.txt';
-
+  /// 从仓库获取最新的离线页面长度（Gitee 优先，GitHub 兜底）。
   Future<void> fetchLengthFromRepo() async {
-    try {
-      final res = await http.get(Uri.parse(_repoLengthUrl))
-          .timeout(const Duration(seconds: 5));
-      if (res.statusCode != 200) return;
-      final length = int.tryParse(res.body.trim());
-      if (length == null || length <= 0) return;
-      _settingsLoaded = _settingsLoaded.copyWith(offlinePageLength: length);
-      await settingsStore.save(_settingsLoaded);
-      log('已从仓库获取离线页面长度: $length chars');
-    } catch (e) {
-      log('从仓库获取长度失败: $e');
+    final result = await PortalLengthRepository.fetch();
+    if (result == null) {
+      log('从仓库获取长度失败: Gitee/GitHub 均不可用');
+      return;
     }
+    final (length, source) = result;
+    _settingsLoaded = _settingsLoaded.copyWith(offlinePageLength: length);
+    await settingsStore.save(_settingsLoaded);
+    log('已从仓库获取离线页面长度: $length chars (via $source)');
   }
 
   Future<void> saveSettings(AppSettings s) async {

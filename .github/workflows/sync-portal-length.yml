@@ -1,0 +1,32 @@
+name: Sync Portal Length to Gitee
+
+on:
+  push:
+    branches: [main]
+    paths: ['portal_length.txt']
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync to Gitee
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: |
+          set -e
+          git clone --depth 1 \
+            "https://EcjtuAuth-sync:${GITEE_TOKEN}@gitee.com/kitsuneMori/EcjtuAuth-portal.git" \
+            /tmp/gitee-portal
+          cp portal_length.txt /tmp/gitee-portal/
+          cd /tmp/gitee-portal
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          if git diff --quiet portal_length.txt; then
+            echo "portal_length.txt 无变化，跳过"
+            exit 0
+          fi
+          git add portal_length.txt
+          git commit -m "sync: portal_length.txt from EcjtuAuth@${GITHUB_SHA::7}"
+          git push origin master

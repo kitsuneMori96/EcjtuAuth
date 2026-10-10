@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 
+import '../core/portal_length_repository.dart';
 import '../platform/desktop_service.dart';
 import '../services/auto_connect.dart';
 import '../services/settings_store.dart';
@@ -26,10 +26,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _startupEnabled = false;
   bool _loading = true;
   bool _fetchingLength = false;
-
-  /// 仓库中最新的离线页面长度。
-  static const _repoLengthUrl =
-      'https://raw.githubusercontent.com/kitsuneMori96/EcjtuAuth/main/portal_length.txt';
 
   @override
   void initState() {
@@ -73,15 +69,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _fetchLengthFromRepo() async {
     setState(() => _fetchingLength = true);
     try {
-      final res = await http.get(Uri.parse(_repoLengthUrl))
-          .timeout(const Duration(seconds: 5));
-      if (res.statusCode != 200) {
-        throw Exception('HTTP ${res.statusCode}');
+      final result = await PortalLengthRepository.fetch();
+      if (result == null) {
+        throw Exception('Gitee/GitHub 均不可用');
       }
-      final length = int.tryParse(res.body.trim());
-      if (length == null || length <= 0) {
-        throw Exception('内容格式错误: ${res.body.trim()}');
-      }
+      final length = result.$1;
       setState(() {
         _settings = _settings.copyWith(offlinePageLength: length);
       });
@@ -89,7 +81,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('已获取最新长度: $length chars'),
+          content: Text('已获取最新长度: $length chars (via ${result.$2})'),
           behavior: SnackBarBehavior.floating,
         ),
       );
