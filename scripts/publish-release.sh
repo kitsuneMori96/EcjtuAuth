@@ -3,6 +3,7 @@ set -euo pipefail
 
 VERSION="${1:?用法: $0 <version>  例如: 1.1.1}"
 REPO="kitsuneMori96/EcjtuAuth"
+REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 WORK_DIR=$(mktemp -d)
 
 echo "📦 发布 ${VERSION} → ${REPO}"
@@ -52,7 +53,7 @@ ARGS=(
   --repo "$REPO"
   --title "v${VERSION}"
   --prerelease
-  --notes-file CHANGELOG.md
+  --notes-file "${REPO_DIR}/CHANGELOG.md"
   "$WIN_ZIP"
 )
 
