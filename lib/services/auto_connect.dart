@@ -193,9 +193,9 @@ class AutoConnectService extends ChangeNotifier {
     notifyListeners();
     final totalSw = Stopwatch()..start();
     try {
-      return await _doLogin(totalSw).timeout(const Duration(seconds: 20));
+      return await _doLogin(totalSw).timeout(const Duration(seconds: 50));
     } on TimeoutException {
-      log('连接超时（20s），请重试');
+      log('连接超时（50s），请重试');
       _updateState(NetState.noCampusWifi);
       return ConnectOutcome.notOnCampus;
     } finally {
@@ -257,12 +257,12 @@ class AutoConnectService extends ChangeNotifier {
     notifyListeners();
     final sw = Stopwatch()..start();
     try {
-      final s = await _safeCheck().timeout(const Duration(seconds: 20));
+      final s = await _safeCheck().timeout(const Duration(seconds: 50));
       log('${sw.elapsedMilliseconds}ms | 刷新状态 → ${s.label}');
       _updateState(s);
       return s;
     } on TimeoutException {
-      log('状态检测超时（20s）');
+      log('状态检测超时（50s）');
       _updateState(NetState.noCampusWifi);
       return NetState.noCampusWifi;
     } finally {
