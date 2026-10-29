@@ -103,11 +103,14 @@ jobs:
       - name: Build APK
         run: flutter build apk --release
 
-      - uses: actions/upload-artifact@v4
+      # 产物保留 7 天，方便手工验收 PR 的实际安装包（过期自动清理，不占额度）。
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
         with:
           name: pr-android-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 7
+          if-no-files-found: error
 
   build-pr-windows:
     if: github.event_name == 'pull_request'
@@ -125,8 +128,15 @@ jobs:
       - name: Build Windows
         run: flutter build windows --release
 
-      - uses: actions/upload-artifact@v4
+      # Windows 产物打成 zip：与 release 中的命名一致，解压即用。
+      - name: Package Windows build
+        shell: pwsh
+        run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath EcjtuAuth-windows-x64.zip
+
+      - name: Upload Windows zip
+        uses: actions/upload-artifact@v4
         with:
-          name: pr-windows-release
-          path: build/windows/x64/runner/Release/
+          name: pr-windows-x64
+          path: EcjtuAuth-windows-x64.zip
           retention-days: 7
+          if-no-files-found: error
