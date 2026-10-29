@@ -133,6 +133,9 @@ class AutoConnectService extends ChangeNotifier {
     return ssid.isEmpty ? null : ssid;
   }
 
+  /// 最近一次网络事件里的 SSID，供 UI 在换网后即时更新。
+  String? get lastSsid => _lastSsid;
+
   void log(String message) {
     if (_disposed) return;
     final ts = DateTime.now().toIso8601String().substring(11, 19);
@@ -548,8 +551,10 @@ class AutoConnectService extends ChangeNotifier {
       startAutoRetry();
       unawaited(connectOnce());
     } else if (event.isDisconnected) {
-      _updateStatus(NetState.noCampusWifi, detail: '网络已断开');
+      // WiFi 断开不等于没网（可能还有以太网），交给 portal 重新判定。
+      _updateStatus(NetState.unknown, detail: 'WiFi 已断开，重新检测…');
       cancelAutoRetry();
+      unawaited(refreshState());
     }
   }
 

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:ecjtu_auth/core/eportal_client.dart';
@@ -6,6 +7,7 @@ import 'package:ecjtu_auth/core/portal_failure.dart';
 import 'package:ecjtu_auth/models/campus_account.dart';
 import 'package:ecjtu_auth/models/net_state.dart';
 import 'package:ecjtu_auth/models/operator.dart';
+import 'package:ecjtu_auth/platform/nlm_service.dart';
 import 'package:ecjtu_auth/services/auto_connect.dart';
 import 'package:ecjtu_auth/services/credential_store.dart';
 import 'package:ecjtu_auth/services/settings_store.dart';
@@ -48,6 +50,18 @@ class _FakeEportal extends EportalClient {
   }
 }
 
+class _FakeNlm extends NlmService {
+  _FakeNlm() : super(supportedPlatform: true);
+
+  final _controller = StreamController<NlmNetworkEvent>.broadcast();
+
+  @override
+  Stream<NlmNetworkEvent> get onNetworkChanged => _controller.stream;
+
+  void emit(String type, [String ssid = '']) =>
+      _controller.add(NlmNetworkEvent(event: type, ssid: ssid));
+}
+
 class _FakeCredentials extends CredentialStore {
   _FakeCredentials([this.account]);
 
@@ -62,6 +76,7 @@ Future<AutoConnectService> _makeService({
   AppSettings settings = const AppSettings(),
   Future<(int, String)?> Function()? fetchLength,
   String? ssid = 'ECJTU-Stu',
+  NlmService? nlmService,
 }) async {
   SharedPreferences.setMockInitialValues({});
   final prefs = await SharedPreferences.getInstance();
@@ -75,6 +90,7 @@ Future<AutoConnectService> _makeService({
       const CampusAccount(username: '20230001', password: 'secret'),
     ),
     settings: store,
+    nlmService: nlmService,
     currentSsid: () async => ssid,
     fetchLength: fetchLength ?? () async => (100, 'Test'),
   );
@@ -190,6 +206,39 @@ void main() {
 
       expect(outcome, ConnectOutcome.portalUnreachable);
       expect(eportal.loginCount, 2);
+    });
+
+    test('WiFi 断开事件不直接判定为无校园网，而是重新探测', () async {
+      final nlm = _FakeNlm();
+      final eportal = _FakeEportal(['x' * 100]);
+      final service = await _makeService(
+        eportal: eportal,
+        nlmService: nlm,
+        settings: const AppSettings(offlinePageLength: 100),
+      );
+
+      nlm.emit('disconnected');
+      await Future.delayed(Duration.zero);
+      await pumpEventQueue();
+
+      // 断开 WiFi 仍可能走以太网，不能直接落到「未连接校园网」
+      expect(service.state, isNot(NetState.noCampusWifi));
+      expect(eportal.fetchCount, greaterThan(0));
+    });
+
+    test('网络事件带回的 SSID 立即可读', () async {
+      final nlm = _FakeNlm();
+      final service = await _makeService(
+        eportal: _FakeEportal(['x' * 100]),
+        nlmService: nlm,
+        settings: const AppSettings(offlinePageLength: 100),
+      );
+      expect(service.lastSsid, isNull);
+
+      nlm.emit('connected', '"ECJTU-Stu"');
+      await pumpEventQueue();
+
+      expect(service.lastSsid, 'ECJTU-Stu');
     });
 
     test('连续认证失败 3 次后停止自动重试', () async {

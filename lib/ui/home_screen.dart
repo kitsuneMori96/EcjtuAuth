@@ -62,7 +62,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _onServiceChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    // 网络事件本身带回 SSID，换网后无需再探测一次即可刷新界面。
+    final eventSsid = widget.service.lastSsid;
+    if (eventSsid != null && eventSsid.isNotEmpty && eventSsid != _ssid) {
+      setState(() => _ssid = eventSsid);
+      return;
+    }
+    setState(() {});
   }
 
   Future<void> _refreshAll() async {
