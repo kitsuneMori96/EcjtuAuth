@@ -79,9 +79,35 @@ jobs:
           cache: true
 
       - run: flutter pub get
+
+      - name: Configure Android signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+            echo "::warning::未配置 Android 签名 Secrets，使用 debug 签名"
+            exit 0
+          fi
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/release-key.jks
+          cat > android/key.properties <<EOF
+          storeFile=release-key.jks
+          storePassword=${ANDROID_KEYSTORE_PASSWORD}
+          keyAlias=${ANDROID_KEY_ALIAS}
+          keyPassword=${ANDROID_KEY_PASSWORD}
+          EOF
+
       # PR 无签名 Secrets 时 build.gradle.kts 会回退 debug 签名并告警。
       - name: Build APK
         run: flutter build apk --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pr-android-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 7
 
   build-pr-windows:
     if: github.event_name == 'pull_request'
@@ -98,3 +124,9 @@ jobs:
       - run: flutter pub get
       - name: Build Windows
         run: flutter build windows --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pr-windows-release
+          path: build/windows/x64/runner/Release/
+          retention-days: 7
