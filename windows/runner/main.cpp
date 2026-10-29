@@ -22,8 +22,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   project.set_dart_entrypoint_arguments(std::move(command_line_arguments));
 
   FlutterWindow window(project);
-  Win32Window::Point origin(10, 10);
-  Win32Window::Size size(1280, 720);
+  // 与 Dart 侧 WindowOptions(430x760, center: true) 保持一致，避免启动时尺寸/位置闪跳。
+  Win32Window::Point origin(
+      (::GetSystemMetrics(SM_CXSCREEN) - 430) / 2,
+      (::GetSystemMetrics(SM_CYSCREEN) - 760) / 2);
+  Win32Window::Size size(430, 760);
   if (!window.Create(L"EcjtuAuth", origin, size)) {
     return EXIT_FAILURE;
   }
