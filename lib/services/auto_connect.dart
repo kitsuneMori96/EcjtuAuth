@@ -10,6 +10,7 @@ import '../core/portal_length_repository.dart';
 import '../models/net_state.dart';
 import '../platform/nlm_service.dart';
 import 'credential_store.dart';
+import 'log_store.dart';
 import 'retry_policy.dart';
 import 'settings_store.dart';
 
@@ -26,13 +27,15 @@ class AutoConnectService extends ChangeNotifier {
     NlmService? nlmService,
     Future<String?> Function()? currentSsid,
     Future<(int, String)?> Function()? fetchLength,
+    LogStore? logStore,
   }) : _eportal = eportal,
        _checker = checker,
        _credentials = credentials,
        settingsStore = settings,
        _nlmService = nlmService,
        _currentSsid = currentSsid,
-       _fetchLength = fetchLength ?? PortalLengthRepository.fetch {
+       _fetchLength = fetchLength ?? PortalLengthRepository.fetch,
+       _logStore = logStore {
     _nlmSubscription = _nlmService?.onNetworkChanged.listen(_onNetworkEvent);
   }
 
@@ -43,6 +46,7 @@ class AutoConnectService extends ChangeNotifier {
   final NlmService? _nlmService;
   final Future<String?> Function()? _currentSsid;
   final Future<(int, String)?> Function() _fetchLength;
+  final LogStore? _logStore;
   StreamSubscription<NlmNetworkEvent>? _nlmSubscription;
 
   NetState state = NetState.checking;
@@ -79,7 +83,24 @@ class AutoConnectService extends ChangeNotifier {
     _settingsLoaded = await settingsStore.load();
     _applyConfig();
     _checker.offlinePageLength = _settingsLoaded.offlinePageLength;
+    _seedLogsFromDisk();
     _notify();
+  }
+
+  /// 把上次运行留下的日志接回内存列表（[logLines] 是倒序）。
+  void _seedLogsFromDisk() {
+    final store = _logStore;
+    if (store == null || logLines.isNotEmpty) return;
+    logLines.addAll(store.recentLines(200).reversed);
+  }
+
+  /// 导出落盘日志（含轮转文件），供「复制日志」使用。
+  Future<String> exportLogs() async {
+    final store = _logStore;
+    if (store == null) return logLines.reversed.join('\n');
+    final text = await store.exportText();
+    if (text.isNotEmpty) return text;
+    return logLines.reversed.join('\n');
   }
 
   /// 从仓库获取最新的离线页面长度（Gitee 优先，GitHub 兜底）并持久化。
@@ -115,8 +136,10 @@ class AutoConnectService extends ChangeNotifier {
   void log(String message) {
     if (_disposed) return;
     final ts = DateTime.now().toIso8601String().substring(11, 19);
-    logLines.insert(0, '[$ts] $message');
+    final line = '[$ts] $message';
+    logLines.insert(0, line);
     if (logLines.length > 200) logLines.removeLast();
+    _logStore?.write(line);
     _notify();
   }
 
