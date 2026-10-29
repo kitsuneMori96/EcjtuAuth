@@ -44,6 +44,7 @@ class NlmMonitor {
   std::thread poll_thread_;
   std::atomic<bool> running_{false};
   bool last_connected_ = false;
+  std::string last_ssid_;
 
   mutable std::mutex mutex_;
 
