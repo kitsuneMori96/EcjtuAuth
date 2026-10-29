@@ -50,16 +50,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> _refreshSsid() async {
     try {
       final ssid = await widget.service.probeSsid();
-      if (mounted) {
-        // 在线但无 SSID → 有线连接
-        if (ssid == null && widget.service.state == NetState.online) {
-          setState(() => _ssid = '以太网');
-        } else {
-          setState(() => _ssid = ssid);
-        }
-      }
+      if (mounted) setState(() => _ssid = ssid);
     } catch (_) {}
   }
+
+  /// 在线却拿不到 SSID → 有线连接。启动时探测跑在认证完成前，
+  /// 所以显示值要随状态实时推导，不能只在探测时判定一次。
+  String? get _displaySsid =>
+      (_ssid == null || _ssid!.isEmpty) &&
+          widget.service.state == NetState.online
+      ? '以太网'
+      : _ssid;
 
   void _onServiceChanged() {
     if (!mounted) return;
@@ -134,7 +135,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         children: [
           StatusCard(
             state: service.busy ? NetState.checking : service.state,
-            ssid: _ssid,
+            ssid: _displaySsid,
             busy: service.busy,
             detail: service.statusDetail,
             onConnect: _connect,
