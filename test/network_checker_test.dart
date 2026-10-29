@@ -1,34 +1,72 @@
+import 'package:ecjtu_auth/core/eportal_client.dart';
+import 'package:ecjtu_auth/core/network_checker.dart';
+import 'package:ecjtu_auth/core/portal_failure.dart';
+import 'package:ecjtu_auth/models/net_state.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+class _FakeEportal extends EportalClient {
+  _FakeEportal({this.body = '', this.error});
+
+  String body;
+  Object? error;
+  int fetchCount = 0;
+
+  @override
+  Future<String> fetchPortalPage() async {
+    fetchCount++;
+    if (error != null) throw error!;
+    return body;
+  }
+}
+
 void main() {
-  test('指纹对比逻辑验证', () {
-    const loginPage = '<html><script>var v46ip="1.2.3.4"</script></html>';
-    const loggedInPage = '<html><body>Welcome</body></html>';
+  group('NetworkChecker.judge', () {
+    test('长度与基准相同 → 待认证', () {
+      final checker = NetworkChecker(eportal: _FakeEportal())
+        ..offlinePageLength = 10;
+      final result = checker.judge('x' * 10);
+      expect(result.state, NetState.campusBlocked);
+      expect(result.pageLength, 10);
+      expect(result.failure, isNull);
+      expect(result.needsCalibration, isFalse);
+    });
 
-    // 模拟首次 check：建立指纹
-    String? fingerprint;
-    fingerprint ??= loginPage;
+    test('长度不同 → 在线', () {
+      final checker = NetworkChecker(eportal: _FakeEportal())
+        ..offlinePageLength = 10;
+      final result = checker.judge('x' * 11);
+      expect(result.state, NetState.online);
+    });
 
-    // 模拟指纹对比
-    bool isOnline(String currentPage) => currentPage != fingerprint;
-
-    expect(isOnline(loginPage), false); // 同一页面 → 离线
-    expect(isOnline(loggedInPage), true); // 不同页面 → 在线
+    test('未校准 → unknown 且标记 needsCalibration', () {
+      final checker = NetworkChecker(eportal: _FakeEportal());
+      final result = checker.judge('x' * 10);
+      expect(result.state, NetState.unknown);
+      expect(result.needsCalibration, isTrue);
+    });
   });
 
-  test('IP 缓存逻辑验证', () {
-    String? cachedIp;
+  group('NetworkChecker.check', () {
+    test('portal 超时 → unknown + timeout，不再误报未连接校园网', () async {
+      final fake = _FakeEportal(
+        error: const PortalException(PortalFailure.timeout, 'GET portal 超时'),
+      );
+      final checker = NetworkChecker(eportal: fake)..offlinePageLength = 10;
 
-    // 模拟提取 IP
-    String? extractIp(String html) {
-      final match = RegExp(r"v46ip='(.*?)'").firstMatch(html);
-      return match?.group(1)?.trim();
-    }
+      final result = await checker.check();
 
-    // 模拟 check：缓存 IP
-    const portalHtml = "<script>var v46ip='10.16.248.179'</script>";
-    cachedIp = extractIp(portalHtml);
+      expect(result.state, NetState.unknown);
+      expect(result.failure, PortalFailure.timeout);
+    });
 
-    expect(cachedIp, '10.16.248.179');
+    test('传入已获取的页面时不再发请求', () async {
+      final fake = _FakeEportal(body: 'x' * 10);
+      final checker = NetworkChecker(eportal: fake)..offlinePageLength = 10;
+
+      final result = await checker.check(portalBody: 'x' * 10);
+
+      expect(result.state, NetState.campusBlocked);
+      expect(fake.fetchCount, 0);
+    });
   });
 }
