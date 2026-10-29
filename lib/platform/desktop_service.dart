@@ -1,4 +1,6 @@
 import 'dart:io';
+
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/widgets.dart' show Size;
 
 import 'package:launch_at_startup/launch_at_startup.dart';
@@ -8,6 +10,12 @@ import 'package:window_manager/window_manager.dart';
 
 /// Windows 桌面集成：窗口管理、系统托盘、开机自启。
 /// 在非 Windows 平台全部为安全空实现。
+///
+/// 单实例：`windows/runner/main.cpp` 启动时持有
+/// `Local\EcjtuAuth_SingleInstance` 互斥量，检测到已有实例会先
+/// `SW_RESTORE` + `SetForegroundWindow` 唤起已有窗口再退出。
+/// 因此 Dart 侧无需做「防双开」判断，也**不会**出现两个实例各持一份
+/// 托盘与 NLM 监听；若未来要支持多开，必须同步移除 C++ 侧互斥量。
 class DesktopService with WindowListener {
   DesktopService._();
 
@@ -46,6 +54,26 @@ class DesktopService with WindowListener {
     await windowManager.focus();
   }
 
+  /// 解析托盘图标路径。
+  ///
+  /// `system_tray` 通过 Win32 `LoadImage` 按**文件路径**加载图标，
+  /// release 构建中资产实际位于 `<exe目录>/data/flutter_assets/assets/`，
+  /// 直接用相对路径 `assets/app_icon.ico` 会失败（CWD 是启动目录而非 exe 目录）。
+  static String? resolveTrayIconPath() {
+    final sep = Platform.pathSeparator;
+    final exeDir = File(Platform.resolvedExecutable).parent.path;
+    final candidates = <String>[
+      '$exeDir${sep}data${sep}flutter_assets${sep}assets${sep}app_icon.ico',
+      '${Directory.current.path}${sep}assets${sep}app_icon.ico',
+      '$exeDir${sep}assets${sep}app_icon.ico',
+    ];
+    for (final path in candidates) {
+      if (File(path).existsSync()) return path;
+    }
+    debugPrint('[DesktopService] 托盘图标未找到，已尝试: ${candidates.join(' | ')}');
+    return null;
+  }
+
   Future<void> initTray({
     required void Function() onConnect,
   }) async {
@@ -54,8 +82,8 @@ class DesktopService with WindowListener {
     onTrayShowWindow = showMainWindow;
     try {
       await _tray.initSystemTray(
-      title: 'EcjtuAuth',
-        iconPath: 'assets/app_icon.ico',
+        title: 'EcjtuAuth',
+        iconPath: resolveTrayIconPath() ?? 'assets/app_icon.ico',
         toolTip: 'EcjtuAuth - ECJTU 校园网助手',
       );
       final menu = Menu()
@@ -81,8 +109,9 @@ class DesktopService with WindowListener {
         }
       });
       _trayReady = true;
-    } catch (_) {
+    } catch (e, st) {
       _trayReady = false;
+      debugPrint('[DesktopService] 托盘初始化失败: $e\n$st');
     }
   }
 

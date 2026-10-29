@@ -13,7 +13,11 @@ namespace {
 
 constexpr char kEventChannelName[] = "ecjtu_auth/network_events";
 constexpr char kMethodChannelName[] = "ecjtu_auth/network_methods";
-constexpr int kPollIntervalMs = 2000;
+// 稳定时降低轮询频率（避免每 2 秒 spawn 一次 cmd.exe/netsh），
+// 检测到变化后短时间内回到快速轮询，避免漏掉紧接的二次变化。
+constexpr int kPollFastMs = 2000;
+constexpr int kPollSlowMs = 8000;
+constexpr int kFastPollsAfterChange = 5;
 
 std::string RunCommand(const std::wstring& cmd) {
   STARTUPINFOW si = {};
@@ -78,8 +82,18 @@ std::string ParseSsid(const std::string& output) {
 }
 
 bool ParseConnected(const std::string& output) {
+  // netsh 输出随系统语言变化：英文 connected / 中文 已连接 / 繁体 已連線。
+  // 注意中文的「已断开连接」「已中斷連線」不包含上述子串；
+  // 但英文 disconnected 含 "connected"，必须先排除，否则断网会被当成联网。
+  if (output.find("disconnected") != std::string::npos ||
+      output.find("Disconnected") != std::string::npos ||
+      output.find("not connected") != std::string::npos) {
+    return false;
+  }
   return output.find("connected") != std::string::npos ||
-         output.find("Connected") != std::string::npos;
+         output.find("Connected") != std::string::npos ||
+         output.find("已连接") != std::string::npos ||
+         output.find("已連線") != std::string::npos;
 }
 
 }  // namespace
@@ -162,6 +176,7 @@ void NlmMonitor::Start() {
   {
     std::lock_guard lock(mutex_);
     last_connected_ = wifiConnected;
+    last_ssid_ = wifiConnected ? wifiSsid : std::string();
   }
   if (wifiConnected) {
     SendEvent("connected", wifiSsid);
@@ -197,27 +212,33 @@ std::pair<bool, std::string> NlmMonitor::GetWifiStatus() {
 // ---------------------------------------------------------------------------
 
 void NlmMonitor::PollLoop() {
+  int fast_polls_left = 0;
   while (running_) {
-    Sleep(kPollIntervalMs);
+    Sleep(fast_polls_left > 0 ? kPollFastMs : kPollSlowMs);
     if (!running_) break;
 
     auto [wifiConnected, wifiSsid] = GetWifiStatus();
 
-    bool changed = false;
+    bool connected_changed = false;
+    bool ssid_changed = false;
     {
       std::lock_guard lock(mutex_);
-      if (wifiConnected != last_connected_) {
-        last_connected_ = wifiConnected;
-        changed = true;
-      }
+      connected_changed = wifiConnected != last_connected_;
+      // 同一 WiFi 内漫游切换 AP 时 SSID 不变，只有真正换网才触发。
+      ssid_changed = wifiConnected && wifiSsid != last_ssid_;
+      last_connected_ = wifiConnected;
+      last_ssid_ = wifiConnected ? wifiSsid : std::string();
     }
 
-    if (changed) {
+    if (connected_changed || ssid_changed) {
+      fast_polls_left = kFastPollsAfterChange;
       if (wifiConnected) {
         SendEvent("connected", wifiSsid);
       } else {
         SendEvent("disconnected", "");
       }
+    } else if (fast_polls_left > 0) {
+      --fast_polls_left;
     }
   }
 }

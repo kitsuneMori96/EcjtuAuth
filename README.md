@@ -24,6 +24,8 @@
 2. 对比响应长度与预存的离线页面长度
 3. 长度不同 → 在线；长度相同 → 离线
 
+离线页面长度会持久化保存，启动时无需重新校准；基准缺失时状态显示为「无法判断」而不是误报离线。
+
 > 服务器对所有 HTTP 请求返回相同的登录页（captive portal 劫持），登录成功后页面内容会变化。
 > 这个变化是判断在线状态的唯一可靠依据。
 
@@ -41,7 +43,7 @@
 - 启动时自动检测并认证
 - Android 回到前台时自动检测
 - Windows 托盘常驻，支持开机自启
-- 失败后按指数退避间隔自动重试
+- 失败后按指数退避间隔自动重试（连续 3 次认证失败后自动停止，避免反复试错锁号）
 
 ### 如果认证状态判断有误
 
@@ -49,14 +51,23 @@
 
 > 服务器页面可能更新导致长度变化，此时需要重新获取。
 
+### 反馈问题
+
+主页日志区右上角可复制完整日志（含历史轮转文件），日志同时落盘到：
+
+- Windows：`%APPDATA%\cn.kitsunemori\EcjtuAuth\logs\app.log`
+- Android：应用私有目录 `logs/app.log`
+
 ## 功能
 
 - 一键认证 ECJTU 校园网与图书馆免费网络
 - 支持移动 / 电信 / 联通运营商后缀
 - Windows 托盘常驻、最小化到托盘、开机自启
+- Windows / Android 网络变化自动重连（换网、休眠唤醒）
 - Android 回到前台自动连接
 - 明暗主题自适应 Material 3 界面
 - 在线状态实时检测（portal 页面长度对比）
+- 运行日志落盘，主页可一键复制用于反馈
 
 ## 技术细节
 
@@ -80,27 +91,29 @@ GET  http://172.16.2.100/          → 对比页面长度判断是否登录成�
 ```
 lib/
 ├── core/
-│   ├── app_config.dart        # 全局配置（服务器地址、超时等）
-│   ├── eportal_client.dart    # Dr.COM eportal 协议客户端
-│   └── network_checker.dart   # 网络状态检测（页面长度对比）
+│   ├── app_config.dart             # 全局配置（服务器地址、超时等）
+│   ├── eportal_client.dart         # Dr.COM eportal 协议客户端
+│   ├── network_checker.dart        # 网络状态检测（页面长度对比）
+│   ├── portal_failure.dart         # 门户请求失败分类
+│   └── portal_length_repository.dart # 离线页面长度拉取（Gitee → GitHub）
 ├── models/
-│   ├── campus_account.dart    # 校园网账号模型
-│   ├── net_state.dart         # 网络状态枚举
-│   └── operator.dart          # 运营商枚举
+│   ├── campus_account.dart         # 校园网账号模型
+│   ├── net_state.dart              # 网络状态枚举与连接结果
+│   └── operator.dart               # 运营商枚举
 ├── platform/
-│   ├── desktop_service.dart   # Windows 托盘、开机自启
-│   └── wifi_probe.dart        # WiFi 名称获取
+│   ├── desktop_service.dart        # Windows 托盘、开机自启
+│   ├── nlm_service.dart            # Windows 网络事件（NLM）+ 电源唤醒
+│   └── wifi_probe.dart             # WiFi 名称获取
 ├── services/
-│   ├── auto_connect.dart      # 连接编排器（核心流程）
-│   ├── credential_store.dart  # 凭据存储（加密）
-│   └── settings_store.dart    # 设置持久化
+│   ├── auto_connect.dart           # 连接编排器（核心流程）
+│   ├── credential_store.dart       # 凭据存储（加密）
+│   ├── retry_policy.dart           # 重试退避与认证失败上限
+│   └── settings_store.dart         # 设置持久化
 └── ui/
-    ├── home_screen.dart       # 主页（状态卡片 + 日志）
-    ├── account_screen.dart    # 账号设置
-    ├── settings_screen.dart   # 系统设置 + 在线检测校准
-    └── widgets/               # 可复用组件
-tools/
-└── EportalAnalyzer/           # Dr.COM eportal 服务器分析工具
+    ├── home_screen.dart            # 主页（状态卡片 + 日志）
+    ├── account_screen.dart         # 账号设置
+    ├── settings_screen.dart        # 系统设置 + 在线检测校准
+    └── widgets/                    # 可复用组件
 ```
 
 ## 开发
@@ -108,18 +121,31 @@ tools/
 ```bash
 flutter pub get
 flutter analyze
-flutter test          # 协议核心单元测试
-flutter run           # 或 -d windows / -d android
+flutter test              # 核心逻辑单元测试
+flutter test --coverage   # 生成覆盖率（lcov）
+flutter run               # 或 -d windows / -d android
 ```
+
+PR 会触发 CI：`analyze --fatal-infos` + `test --coverage`，并预构建 Windows / Android release，原生编译错误在合并前就会暴露。
 
 ## 构建
 
 打 tag 推送后由 GitHub Actions 自动构建：
 
 ```bash
-git tag v1.1.0-beta.2 && git push origin v1.1.0-beta.2
+git tag v1.3.0 && git push origin v1.3.0
 # → Releases 页产出 EcjtuAuth-android.apk 与 EcjtuAuth-windows-x64.zip
 ```
+
+Android 正式签名需要先生成 keystore 并配置仓库 Secrets：
+
+```bash
+./scripts/generate-android-keystore.sh
+# 按脚本输出配置 ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD
+#                ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD
+```
+
+未配置 Secrets 时本地与前几轮 PR 构建会回退 debug 签名；正式签名与 debug 签名不兼容，首次升级正式版需先卸载旧版。
 
 ## 许可
 

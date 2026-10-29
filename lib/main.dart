@@ -9,6 +9,7 @@ import 'platform/nlm_service.dart';
 import 'platform/wifi_probe.dart';
 import 'services/auto_connect.dart';
 import 'services/credential_store.dart';
+import 'services/log_store.dart';
 import 'services/settings_store.dart';
 import 'ui/account_screen.dart';
 import 'ui/app_theme.dart';
@@ -46,28 +47,32 @@ class _EcjtuAuthAppState extends State<EcjtuAuthApp> {
     nlmService.startListening();
 
     final eportal = EportalClient(config: const AppConfig());
+    final probe = WifiProbe(nlmService: nlmService);
+    final logStore = LogStore();
     service = AutoConnectService(
       eportal: eportal,
-      checker: NetworkChecker(eportal: eportal, config: const AppConfig()),
+      checker: NetworkChecker(eportal: eportal),
       credentials: CredentialStore(),
       settings: SettingsStore(widget.prefs),
       nlmService: nlmService,
+      currentSsid: probe.currentSsid,
+      logStore: logStore,
     );
-    service.loadSettings().then((_) {
-      _autoConnectOnStartup();
-      if (service.settings.autoRetry) {
-        service.startAutoRetry();
-      }
+    logStore.init().then((_) {
+      service.loadSettings().then((_) {
+        service.log('应用启动（日志文件: ${logStore.filePath ?? '不可用'}）');
+        _autoConnectOnStartup();
+        if (service.settings.autoRetry) {
+          service.startAutoRetry();
+        }
+      });
     });
-    widget.desktop.initTray(
-      onConnect: () => service.connectNow(),
-    );
+    widget.desktop.initTray(onConnect: () => service.connectNow());
   }
 
   Future<void> _autoConnectOnStartup() async {
     // 检测 WiFi 名称，匹配校园网则直接登录
-    final ssid = await WifiProbe().currentSsid();
-    final cleanSsid = ssid?.trim().replaceAll('"', '') ?? '';
+    final cleanSsid = await service.probeSsid() ?? '';
     if (cleanSsid.contains(service.settings.ssidCampus) ||
         cleanSsid.contains(service.settings.ssidFree)) {
       service.log('检测到校园 WiFi: $cleanSsid，尝试连接');
@@ -114,8 +119,7 @@ class _HomeShellState extends State<HomeShell> {
 
   CredentialStore? _credentialStore;
 
-  CredentialStore get _store =>
-      _credentialStore ??= CredentialStore();
+  CredentialStore get _store => _credentialStore ??= CredentialStore();
 
   @override
   Widget build(BuildContext context) {
@@ -126,13 +130,17 @@ class _HomeShellState extends State<HomeShell> {
     ];
     return Scaffold(
       appBar: AppBar(
-        title: const Text('EcjtuAuth', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          'EcjtuAuth',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         actions: [
           IconButton(
             tooltip: '手动检测',
             icon: const Icon(Icons.wifi_find_rounded),
-            onPressed:
-                widget.service.busy ? null : () => widget.service.refreshState(),
+            onPressed: widget.service.busy
+                ? null
+                : () => widget.service.refreshState(),
           ),
         ],
       ),

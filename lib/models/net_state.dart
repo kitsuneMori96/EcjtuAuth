@@ -1,4 +1,4 @@
-/// 设备当前的网络状态（三态模型）。
+/// 设备当前的网络状态。
 enum NetState {
   /// 未连接校园网 SSID，或认证服务器不可达。
   noCampusWifi,
@@ -11,15 +11,19 @@ enum NetState {
 
   /// 正在检测中。
   checking,
+
+  /// portal 不可达或未校准，无法判断。
+  unknown,
 }
 
 extension NetStateX on NetState {
   String get label => switch (this) {
-        NetState.noCampusWifi => '未连接校园网',
-        NetState.campusBlocked => '校园网待认证',
-        NetState.online => '已在线',
-        NetState.checking => '检测中…',
-      };
+    NetState.noCampusWifi => '未连接校园网',
+    NetState.campusBlocked => '校园网待认证',
+    NetState.online => '已在线',
+    NetState.checking => '检测中…',
+    NetState.unknown => '无法判断',
+  };
 }
 
 /// 一次完整「连接」动作的结果。
@@ -35,6 +39,15 @@ enum ConnectOutcome {
 
   /// 当前不在校园网环境。
   notOnCampus,
+
+  /// portal 或登录接口不可达（超时/拒绝/网络错误）。
+  portalUnreachable,
+
+  /// 已提交认证，但缺少基准长度，无法验证结果。
+  unverified,
+
+  /// 内部异常（存储、未预期错误等）。
+  failed,
 }
 
 extension ConnectOutcomeX on ConnectOutcome {
@@ -42,9 +55,22 @@ extension ConnectOutcomeX on ConnectOutcome {
       this == ConnectOutcome.success || this == ConnectOutcome.alreadyOnline;
 
   String get label => switch (this) {
-        ConnectOutcome.alreadyOnline => '本就在线，无需认证',
-        ConnectOutcome.success => '认证成功',
-        ConnectOutcome.authFailed => '认证失败，请检查账号信息',
-        ConnectOutcome.notOnCampus => '未连接校园网 WiFi',
-      };
+    ConnectOutcome.alreadyOnline => '本就在线，无需认证',
+    ConnectOutcome.success => '认证成功',
+    ConnectOutcome.authFailed => '认证失败，请检查账号信息',
+    ConnectOutcome.notOnCampus => '未连接校园网 WiFi',
+    ConnectOutcome.portalUnreachable => '认证服务器不可达',
+    ConnectOutcome.unverified => '已提交认证，但无法验证结果（未校准长度）',
+    ConnectOutcome.failed => '连接失败（内部错误）',
+  };
+
+  /// 失败时给用户的可操作建议；成功时为 null。
+  String? get hint => switch (this) {
+    ConnectOutcome.alreadyOnline || ConnectOutcome.success => null,
+    ConnectOutcome.notOnCampus => '请先连接 ECJTU-Stu 或 EcjtuLib_Free',
+    ConnectOutcome.portalUnreachable => '若开着代理或 VPN，请关闭后重试；也可能是校园网维护中',
+    ConnectOutcome.authFailed => '请核对学号、密码与运营商是否正确',
+    ConnectOutcome.unverified => '到设置页点「从仓库获取最新长度」校准后再试',
+    ConnectOutcome.failed => '请复制日志提交 Issue 以便排查',
+  };
 }

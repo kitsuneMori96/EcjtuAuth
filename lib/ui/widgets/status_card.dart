@@ -9,6 +9,7 @@ class StatusCard extends StatelessWidget {
     required this.state,
     required this.ssid,
     required this.busy,
+    this.detail,
     this.onConnect,
     this.onRefresh,
   });
@@ -16,6 +17,10 @@ class StatusCard extends StatelessWidget {
   final NetState state;
   final String? ssid;
   final bool busy;
+
+  /// 失败原因 / 校准提示等补充说明。
+  final String? detail;
+
   final VoidCallback? onConnect;
   final VoidCallback? onRefresh;
 
@@ -24,25 +29,18 @@ class StatusCard extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final (icon, color, actionLabel) = switch (state) {
       NetState.online => (
-          Icons.verified_user_rounded,
-          Colors.green.shade600,
-          null,
-        ),
+        Icons.verified_user_rounded,
+        Colors.green.shade600,
+        null,
+      ),
       NetState.campusBlocked => (
-          Icons.wifi_password_rounded,
-          scheme.error,
-          '一键认证',
-        ),
-      NetState.noCampusWifi => (
-          Icons.wifi_off_rounded,
-          scheme.outline,
-          null
-        ),
-      NetState.checking => (
-          Icons.sync_rounded,
-          scheme.primary,
-          null
-        ),
+        Icons.wifi_password_rounded,
+        scheme.error,
+        '一键认证',
+      ),
+      NetState.noCampusWifi => (Icons.wifi_off_rounded, scheme.outline, null),
+      NetState.checking => (Icons.sync_rounded, scheme.primary, null),
+      NetState.unknown => (Icons.help_outline_rounded, scheme.outline, null),
     };
 
     return Card(
@@ -70,9 +68,7 @@ class StatusCard extends StatelessWidget {
             const SizedBox(height: 16),
             Text(
               state.label,
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
+              style: Theme.of(context).textTheme.titleLarge
                   ?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 6),
@@ -80,8 +76,11 @@ class StatusCard extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.wifi_tethering_rounded,
-                    size: 15, color: scheme.outline),
+                Icon(
+                  Icons.wifi_tethering_rounded,
+                  size: 15,
+                  color: scheme.outline,
+                ),
                 const SizedBox(width: 4),
                 Text(
                   (ssid == null || ssid!.isEmpty) ? '未检测到 WiFi' : ssid!,
@@ -89,6 +88,14 @@ class StatusCard extends StatelessWidget {
                 ),
               ],
             ),
+            if (detail != null && detail!.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                detail!,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: scheme.outline, fontSize: 12),
+              ),
+            ],
             if (!busy) ...[
               const SizedBox(height: 20),
               if (actionLabel != null)

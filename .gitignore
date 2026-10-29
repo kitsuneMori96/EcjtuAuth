@@ -46,3 +46,11 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Android 发布签名（绝不入库）
+/android/key.properties
+/android/app/*.jks
+/android/app/*.keystore
+
+# 失效 gitlink / 本地工具目录（不参与构建）
+/tools/
