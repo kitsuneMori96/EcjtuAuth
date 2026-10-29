@@ -83,7 +83,13 @@ std::string ParseSsid(const std::string& output) {
 
 bool ParseConnected(const std::string& output) {
   // netsh 输出随系统语言变化：英文 connected / 中文 已连接 / 繁体 已連線。
-  // 注意中文的「已断开连接」「已中斷連線」不包含上述子串。
+  // 注意中文的「已断开连接」「已中斷連線」不包含上述子串；
+  // 但英文 disconnected 含 "connected"，必须先排除，否则断网会被当成联网。
+  if (output.find("disconnected") != std::string::npos ||
+      output.find("Disconnected") != std::string::npos ||
+      output.find("not connected") != std::string::npos) {
+    return false;
+  }
   return output.find("connected") != std::string::npos ||
          output.find("Connected") != std::string::npos ||
          output.find("已连接") != std::string::npos ||
