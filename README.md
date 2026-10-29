@@ -51,14 +51,23 @@
 
 > 服务器页面可能更新导致长度变化，此时需要重新获取。
 
+### 反馈问题
+
+主页日志区右上角可复制完整日志（含历史轮转文件），日志同时落盘到：
+
+- Windows：`%APPDATA%\cn.kitsunemori\EcjtuAuth\logs\app.log`
+- Android：应用私有目录 `logs/app.log`
+
 ## 功能
 
 - 一键认证 ECJTU 校园网与图书馆免费网络
 - 支持移动 / 电信 / 联通运营商后缀
 - Windows 托盘常驻、最小化到托盘、开机自启
+- Windows / Android 网络变化自动重连（换网、休眠唤醒）
 - Android 回到前台自动连接
 - 明暗主题自适应 Material 3 界面
 - 在线状态实时检测（portal 页面长度对比）
+- 运行日志落盘，主页可一键复制用于反馈
 
 ## 技术细节
 
