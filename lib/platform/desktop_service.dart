@@ -10,6 +10,12 @@ import 'package:window_manager/window_manager.dart';
 
 /// Windows 桌面集成：窗口管理、系统托盘、开机自启。
 /// 在非 Windows 平台全部为安全空实现。
+///
+/// 单实例：`windows/runner/main.cpp` 启动时持有
+/// `Local\EcjtuAuth_SingleInstance` 互斥量，检测到已有实例会先
+/// `SW_RESTORE` + `SetForegroundWindow` 唤起已有窗口再退出。
+/// 因此 Dart 侧无需做「防双开」判断，也**不会**出现两个实例各持一份
+/// 托盘与 NLM 监听；若未来要支持多开，必须同步移除 C++ 侧互斥量。
 class DesktopService with WindowListener {
   DesktopService._();
 

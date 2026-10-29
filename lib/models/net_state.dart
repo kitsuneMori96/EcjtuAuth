@@ -63,4 +63,14 @@ extension ConnectOutcomeX on ConnectOutcome {
     ConnectOutcome.unverified => '已提交认证，但无法验证结果（未校准长度）',
     ConnectOutcome.failed => '连接失败（内部错误）',
   };
+
+  /// 失败时给用户的可操作建议；成功时为 null。
+  String? get hint => switch (this) {
+    ConnectOutcome.alreadyOnline || ConnectOutcome.success => null,
+    ConnectOutcome.notOnCampus => '请先连接 ECJTU-Stu 或 EcjtuLib_Free',
+    ConnectOutcome.portalUnreachable => '若开着代理或 VPN，请关闭后重试；也可能是校园网维护中',
+    ConnectOutcome.authFailed => '请核对学号、密码与运营商是否正确',
+    ConnectOutcome.unverified => '到设置页点「从仓库获取最新长度」校准后再试',
+    ConnectOutcome.failed => '请复制日志提交 Issue 以便排查',
+  };
 }

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../models/net_state.dart';
@@ -61,7 +62,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _onServiceChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    // 网络事件本身带回 SSID，换网后无需再探测一次即可刷新界面。
+    final eventSsid = widget.service.lastSsid;
+    if (eventSsid != null && eventSsid.isNotEmpty && eventSsid != _ssid) {
+      setState(() => _ssid = eventSsid);
+      return;
+    }
+    setState(() {});
   }
 
   Future<void> _refreshAll() async {
@@ -72,9 +80,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> _connect() async {
     final outcome = await widget.service.connectNow();
     if (!mounted) return;
+    final hint = outcome.hint;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(outcome.label),
+        content: Text(hint == null ? outcome.label : '${outcome.label}\n$hint'),
         behavior: SnackBarBehavior.floating,
         backgroundColor: outcome.isGood
             ? Colors.green.shade700
@@ -83,6 +92,28 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
     if (outcome == ConnectOutcome.notOnCampus) return;
     await _refreshAll();
+  }
+
+  Future<void> _copyLogs() async {
+    final text = await widget.service.exportLogs();
+    if (!mounted) return;
+    if (text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('暂无日志'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('日志已复制到剪贴板'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   @override
@@ -115,7 +146,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+                  padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
                   child: Row(
                     children: [
                       Icon(
@@ -127,6 +158,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       Text(
                         '运行日志',
                         style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.copy_all_outlined, size: 18),
+                        tooltip: '复制日志',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: _copyLogs,
                       ),
                     ],
                   ),

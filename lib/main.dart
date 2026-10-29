@@ -9,6 +9,7 @@ import 'platform/nlm_service.dart';
 import 'platform/wifi_probe.dart';
 import 'services/auto_connect.dart';
 import 'services/credential_store.dart';
+import 'services/log_store.dart';
 import 'services/settings_store.dart';
 import 'ui/account_screen.dart';
 import 'ui/app_theme.dart';
@@ -47,6 +48,7 @@ class _EcjtuAuthAppState extends State<EcjtuAuthApp> {
 
     final eportal = EportalClient(config: const AppConfig());
     final probe = WifiProbe(nlmService: nlmService);
+    final logStore = LogStore();
     service = AutoConnectService(
       eportal: eportal,
       checker: NetworkChecker(eportal: eportal),
@@ -54,12 +56,16 @@ class _EcjtuAuthAppState extends State<EcjtuAuthApp> {
       settings: SettingsStore(widget.prefs),
       nlmService: nlmService,
       currentSsid: probe.currentSsid,
+      logStore: logStore,
     );
-    service.loadSettings().then((_) {
-      _autoConnectOnStartup();
-      if (service.settings.autoRetry) {
-        service.startAutoRetry();
-      }
+    logStore.init().then((_) {
+      service.loadSettings().then((_) {
+        service.log('应用启动（日志文件: ${logStore.filePath ?? '不可用'}）');
+        _autoConnectOnStartup();
+        if (service.settings.autoRetry) {
+          service.startAutoRetry();
+        }
+      });
     });
     widget.desktop.initTray(onConnect: () => service.connectNow());
   }
