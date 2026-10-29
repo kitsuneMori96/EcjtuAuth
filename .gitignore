@@ -51,3 +51,6 @@ app.*.map.json
 /android/key.properties
 /android/app/*.jks
 /android/app/*.keystore
+
+# 失效 gitlink / 本地工具目录（不参与构建）
+/tools/
