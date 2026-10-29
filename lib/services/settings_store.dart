@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/app_config.dart';
@@ -57,31 +59,50 @@ class AppSettings {
     );
   }
 
-  Map<String, Object> toMap() => {
-        'portalHost': portalHost,
-        'ssidCampus': ssidCampus,
-        'ssidFree': ssidFree,
-        'autoRetry': autoRetry ? '1' : '0',
-        'baseRetryDelaySec': '$baseRetryDelaySec',
-        'maxRetryDelaySec': '$maxRetryDelaySec',
-        'launchAtStartup': launchAtStartup ? '1' : '0',
-        'autoConnectOnResume': autoConnectOnResume ? '1' : '0',
-        if (offlinePageLength != null) 'offlinePageLength': '$offlinePageLength',
-      };
+  Map<String, Object?> toMap() => {
+    'portalHost': portalHost,
+    'ssidCampus': ssidCampus,
+    'ssidFree': ssidFree,
+    'autoRetry': autoRetry,
+    'baseRetryDelaySec': baseRetryDelaySec,
+    'maxRetryDelaySec': maxRetryDelaySec,
+    'launchAtStartup': launchAtStartup,
+    'autoConnectOnResume': autoConnectOnResume,
+    'offlinePageLength': offlinePageLength,
+  };
 
-  factory AppSettings.fromMap(Map<String, Object> map) {
+  factory AppSettings.fromMap(Map<String, Object?> map) {
     return AppSettings(
-      portalHost: map['portalHost'] as String? ?? AppConfig.defaultPortalHost,
-      ssidCampus:
-          map['ssidCampus'] as String? ?? AppConfig.defaultSsidCampus,
-      ssidFree: map['ssidFree'] as String? ?? AppConfig.defaultSsidFree,
-      autoRetry: (map['autoRetry'] as String?) != '0',
-      baseRetryDelaySec: int.tryParse(map['baseRetryDelaySec'] as String? ?? '') ?? 10,
-      maxRetryDelaySec: int.tryParse(map['maxRetryDelaySec'] as String? ?? '') ?? 300,
-      launchAtStartup: (map['launchAtStartup'] as String?) == '1',
-      autoConnectOnResume: (map['autoConnectOnResume'] as String?) != '0',
-      offlinePageLength: int.tryParse(map['offlinePageLength'] as String? ?? ''),
+      portalHost: _string(map['portalHost'], AppConfig.defaultPortalHost),
+      ssidCampus: _string(map['ssidCampus'], AppConfig.defaultSsidCampus),
+      ssidFree: _string(map['ssidFree'], AppConfig.defaultSsidFree),
+      autoRetry: _bool(map['autoRetry'], fallback: true),
+      baseRetryDelaySec: _int(map['baseRetryDelaySec'], 10),
+      maxRetryDelaySec: _int(map['maxRetryDelaySec'], 300),
+      launchAtStartup: _bool(map['launchAtStartup'], fallback: false),
+      autoConnectOnResume: _bool(map['autoConnectOnResume'], fallback: true),
+      offlinePageLength: _intOrNull(map['offlinePageLength']),
     );
+  }
+
+  static String _string(Object? value, String fallback) {
+    if (value is String && value.isNotEmpty) return value;
+    return fallback;
+  }
+
+  static bool _bool(Object? value, {required bool fallback}) {
+    if (value is bool) return value;
+    if (value is String) return value != '0';
+    return fallback;
+  }
+
+  static int _int(Object? value, int fallback) =>
+      value is int ? value : int.tryParse('$value') ?? fallback;
+
+  static int? _intOrNull(Object? value) {
+    if (value is int) return value;
+    if (value is String) return int.tryParse(value);
+    return null;
   }
 }
 
@@ -90,24 +111,38 @@ class SettingsStore {
 
   final SharedPreferences _prefs;
 
-  static const _prefix = 'settings.';
+  static const _key = 'settings.v2';
+  static const _legacyKey = 'settings.';
 
   Future<AppSettings> load() async {
-    final raw = _prefs.getString(_prefix);
-    if (raw == null) return const AppSettings();
-    try {
-      final map = Map<String, Object>.from(Uri.splitQueryString(raw));
-      return AppSettings.fromMap(map);
-    } catch (_) {
-      return const AppSettings();
+    final raw = _prefs.getString(_key);
+    if (raw != null) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map) {
+          return AppSettings.fromMap(decoded.map((k, v) => MapEntry('$k', v)));
+        }
+      } catch (_) {
+        // 损坏的 JSON 回退到默认值/旧格式
+      }
     }
+
+    // 兼容 1.x 的 query-string 格式（全字符串键值）。
+    final legacy = _prefs.getString(_legacyKey);
+    if (legacy != null) {
+      try {
+        return AppSettings.fromMap(
+          Map<String, Object?>.from(Uri.splitQueryString(legacy)),
+        );
+      } catch (_) {
+        // 旧格式损坏，使用默认值
+      }
+    }
+    return const AppSettings();
   }
 
   Future<void> save(AppSettings s) async {
-    final encoded = Uri(queryParameters: s.toMap().map(
-      (k, v) => MapEntry(k, '$v'),
-    )).query;
-    await _prefs.setString(_prefix, encoded);
+    await _prefs.setString(_key, jsonEncode(s.toMap()));
   }
 }
 

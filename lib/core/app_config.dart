@@ -1,10 +1,10 @@
-/// 全局可配置项：默认值来自 ECJTU 校园网现网环境，
-/// 全部可在应用内修改并持久化，不硬编码进业务逻辑。
+/// eportal 协议客户端的运行时配置。
+///
+/// 实例由 [AppSettings] 在设置加载/保存时生成，因此修改认证服务器地址后
+/// 下一次连接立即生效。
 class AppConfig {
   const AppConfig({
     this.portalHost = defaultPortalHost,
-    this.ssidCampus = defaultSsidCampus,
-    this.ssidFree = defaultSsidFree,
     this.requestTimeout = defaultRequestTimeout,
   });
 
@@ -15,19 +15,5 @@ class AppConfig {
   static const Duration defaultRequestTimeout = Duration(seconds: 3);
 
   final String portalHost;
-  final String ssidCampus;
-  final String ssidFree;
   final Duration requestTimeout;
-
-  AppConfig copyWith({
-    String? portalHost,
-    String? ssidCampus,
-    String? ssidFree,
-  }) {
-    return AppConfig(
-      portalHost: portalHost ?? this.portalHost,
-      ssidCampus: ssidCampus ?? this.ssidCampus,
-      ssidFree: ssidFree ?? this.ssidFree,
-    );
-  }
 }

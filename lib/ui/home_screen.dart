@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../models/net_state.dart';
-import '../platform/wifi_probe.dart';
 import '../services/auto_connect.dart';
 import 'widgets/log_view.dart';
 import 'widgets/status_card.dart';
@@ -20,8 +19,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
-  static final WifiProbe _wifiProbe = WifiProbe();
-
   String? _ssid;
 
   @override
@@ -29,25 +26,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     widget.service.addListener(_onServiceChanged);
-    AutoConnectService.currentSsid = () => _wifiProbe.currentSsid();
     _requestPermissionAndInit();
   }
 
   Future<void> _requestPermissionAndInit() async {
     if (Platform.isAndroid) {
-      final status = await Permission.location.request();
-      if (!status.isGranted && !status.isLimited) {}
+      await Permission.location.request();
     }
-    _refreshSsid();
-    // 启动时尝试连接（会先检测状态）
-    widget.service.connectNow();
+    await _refreshSsid();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _refreshSsid();
-      if (widget.service.settings.autoConnectOnResume) {
+      if (Platform.isAndroid && widget.service.settings.autoConnectOnResume) {
         widget.service.connectNow();
       }
     }
@@ -55,14 +48,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _refreshSsid() async {
     try {
-      final ssid = await _wifiProbe.currentSsid();
+      final ssid = await widget.service.probeSsid();
       if (mounted) {
-        final clean = _cleanSsid(ssid);
         // 在线但无 SSID → 有线连接
-        if (clean == null && widget.service.state == NetState.online) {
+        if (ssid == null && widget.service.state == NetState.online) {
           setState(() => _ssid = '以太网');
         } else {
-          setState(() => _ssid = clean);
+          setState(() => _ssid = ssid);
         }
       }
     } catch (_) {}
@@ -77,15 +69,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     await _refreshSsid();
   }
 
-  String? _cleanSsid(String? raw) {
-    if (raw == null) return null;
-    var s = raw.trim();
-    if (s.startsWith('"') && s.endsWith('"') && s.length >= 2) {
-      s = s.substring(1, s.length - 1);
-    }
-    return s.isEmpty ? null : s;
-  }
-
   Future<void> _connect() async {
     final outcome = await widget.service.connectNow();
     if (!mounted) return;
@@ -93,8 +76,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       SnackBar(
         content: Text(outcome.label),
         behavior: SnackBarBehavior.floating,
-        backgroundColor:
-            outcome.isGood ? Colors.green.shade700 : Theme.of(context).colorScheme.error,
+        backgroundColor: outcome.isGood
+            ? Colors.green.shade700
+            : Theme.of(context).colorScheme.error,
       ),
     );
     if (outcome == ConnectOutcome.notOnCampus) return;
@@ -121,6 +105,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             state: service.busy ? NetState.checking : service.state,
             ssid: _ssid,
             busy: service.busy,
+            detail: service.statusDetail,
             onConnect: _connect,
             onRefresh: _refreshAll,
           ),
@@ -133,10 +118,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
                   child: Row(
                     children: [
-                      Icon(Icons.terminal_rounded,
-                          size: 17, color: Theme.of(context).colorScheme.outline),
+                      Icon(
+                        Icons.terminal_rounded,
+                        size: 17,
+                        color: Theme.of(context).colorScheme.outline,
+                      ),
                       const SizedBox(width: 6),
-                      Text('运行日志', style: Theme.of(context).textTheme.titleSmall),
+                      Text(
+                        '运行日志',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
                     ],
                   ),
                 ),
