@@ -292,21 +292,26 @@ class AutoConnectService extends ChangeNotifier {
   // ─── 入口方法（single-flight）────────────────────────
 
   /// 快速连接：直接登录 → 验证。
-  Future<ConnectOutcome> connectNow() => _single(_connect);
+  Future<ConnectOutcome> connectNow({String source = 'manual'}) =>
+      _single(source, () => _connect(source));
 
   /// 完整「检测→认证→复验」流程；已在线时直接返回。
-  Future<ConnectOutcome> connectOnce() {
-    final existing = _inFlight;
-    if (existing != null) return existing;
-    if (state == NetState.online) {
+  Future<ConnectOutcome> connectOnce({String source = 'manual'}) {
+    if (_inFlight == null && state == NetState.online) {
       return Future.value(ConnectOutcome.alreadyOnline);
     }
-    return _single(_connect);
+    return _single(source, () => _connect(source));
   }
 
-  Future<ConnectOutcome> _single(Future<ConnectOutcome> Function() body) {
+  Future<ConnectOutcome> _single(
+    String source,
+    Future<ConnectOutcome> Function() body,
+  ) {
     final existing = _inFlight;
-    if (existing != null) return existing;
+    if (existing != null) {
+      log('已有检查进行中，合并来源: $source');
+      return existing;
+    }
 
     final future = _run(body);
     _inFlight = future;
@@ -323,7 +328,8 @@ class AutoConnectService extends ChangeNotifier {
     }
   }
 
-  Future<ConnectOutcome> _connect() async {
+  Future<ConnectOutcome> _connect(String source) async {
+    log('开始检查（来源: $source）');
     if (state != NetState.online) {
       _updateStatus(NetState.checking, detail: '正在连接…');
     }
@@ -357,7 +363,7 @@ class AutoConnectService extends ChangeNotifier {
 
   Future<void> _retryTick() async {
     if (_disposed) return;
-    final outcome = await connectOnce();
+    final outcome = await connectOnce(source: 'retry');
     if (_disposed) return;
     if (outcome.isGood) {
       _authFailStreak = 0;
@@ -405,7 +411,7 @@ class AutoConnectService extends ChangeNotifier {
 
   // ─── 状态查询 ───────────────────────────────────────
 
-  Future<NetState> refreshState() async {
+  Future<NetState> refreshState({String source = 'manual'}) async {
     if (_inFlight != null || _refreshing) return state;
     _refreshing = true;
     _notify();
@@ -415,7 +421,7 @@ class AutoConnectService extends ChangeNotifier {
       _checker.offlinePageLength = _settingsLoaded.offlinePageLength;
       final result = await _safeCheck().timeout(_overallTimeout);
       _applyCheck(result);
-      log('${sw.elapsedMilliseconds}ms | 刷新状态 → ${_describe(result)}');
+      log('${sw.elapsedMilliseconds}ms | 刷新状态（来源 $source）→ ${_describe(result)}');
       return state;
     } on TimeoutException {
       log('状态检测超时（${_overallTimeout.inSeconds}s）');
@@ -580,12 +586,12 @@ class AutoConnectService extends ChangeNotifier {
       });
     } else if (event.isConnected) {
       startAutoRetry();
-      unawaited(connectOnce());
+      unawaited(connectOnce(source: 'event'));
     } else if (event.isDisconnected) {
       // WiFi 断开不等于没网（可能还有以太网），交给 portal 重新判定。
       _updateStatus(NetState.unknown, detail: 'WiFi 已断开，重新检测…');
       cancelAutoRetry();
-      unawaited(refreshState());
+      unawaited(refreshState(source: 'event'));
     }
   }
 
@@ -593,7 +599,7 @@ class AutoConnectService extends ChangeNotifier {
   Future<void> reconnectAfterWake() async {
     _updateStatus(NetState.checking, detail: '唤醒后重新认证');
     for (var i = 0; i < 3; i++) {
-      final outcome = await connectNow();
+      final outcome = await connectNow(source: 'wake');
       if (outcome.isGood) {
         log('唤醒后认证成功');
         return;

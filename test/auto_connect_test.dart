@@ -314,6 +314,32 @@ void main() {
       service.dispose();
     });
 
+    test('检查入口记录触发来源', () async {
+      final eportal = _FakeEportal(['x' * 100]);
+      final nlm = _FakeNlm();
+      final service = await _makeService(
+        eportal: eportal,
+        nlmService: nlm,
+        settings: const AppSettings(
+          offlinePageLength: 100,
+          baseRetryDelaySec: 0,
+          maxRetryDelaySec: 0,
+        ),
+      );
+
+      await service.connectNow(source: 'manual');
+      expect(service.logLines.any((line) => line.contains('来源: manual')), isTrue);
+
+      nlm.emit('connected', 'ECJTU-Stu');
+      await pumpEventQueue();
+      expect(
+        service.logLines.any((line) => line.contains('event')),
+        isTrue,
+        reason: '锁屏期间的检查要能说清是谁触发的',
+      );
+      service.dispose();
+    });
+
     test('连续认证失败 3 次后停止自动重试', () async {
       // 基准与页面长度相同 → POST 成功但复验始终离线
       final eportal = _FakeEportal(['x' * 100]);
@@ -334,6 +360,7 @@ void main() {
         service.logLines.any((line) => line.contains('连续认证失败 3 次')),
         isTrue,
       );
+      expect(service.logLines.any((line) => line.contains('来源: retry')), isTrue);
       final fetchesAtStop = eportal.fetchCount;
       await Future.delayed(const Duration(milliseconds: 300));
       expect(eportal.fetchCount, fetchesAtStop);

@@ -42,7 +42,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       _refreshSsid();
       if (Platform.isAndroid && widget.service.settings.autoConnectOnResume) {
-        widget.service.connectNow();
+        widget.service.connectNow(source: 'resume');
       }
     }
   }
