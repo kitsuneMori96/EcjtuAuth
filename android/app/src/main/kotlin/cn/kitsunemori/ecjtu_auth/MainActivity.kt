@@ -1,6 +1,9 @@
 package cn.kitsunemori.ecjtu_auth
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -17,7 +20,7 @@ import io.flutter.plugin.common.MethodChannel
 /**
  * 把 Android 的网络状态变化接入与 Windows 相同的通道：
  *
- * - `ecjtu_auth/network_events`（EventChannel）：`connected` / `disconnected`，
+ * - `ecjtu_auth/network_events`（EventChannel）：`connected` / `disconnected` / `wake`，
  *   载荷 `{"event": ..., "ssid": ..., "type": "wifi|cellular|ethernet|none"}`。
  * - `ecjtu_auth/network_methods`（MethodChannel）：
  *   `getCurrentNetwork` → `{"type": ..., "ssid": ..., "ssidVisible": bool}`，
@@ -47,6 +50,7 @@ class MainActivity : FlutterActivity() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var eventSink: EventChannel.EventSink? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var screenReceiver: BroadcastReceiver? = null
 
     /** 上一次发出的事件（`event|ssid`），用于吞掉 onCapabilitiesChanged 的重复回调。 */
     private var lastEmitted: String? = null
@@ -61,6 +65,7 @@ class MainActivity : FlutterActivity() {
                     eventSink = events
                     lastEmitted = null
                     registerNetworkCallback()
+                    registerScreenReceiver()
                     // 补一次当前状态：Dart 侧首次订阅时回调可能还没有触发过，
                     // 不能指望「启动就一定有 onAvailable」。
                     emitCurrentState()
@@ -68,6 +73,7 @@ class MainActivity : FlutterActivity() {
 
                 override fun onCancel(arguments: Any?) {
                     unregisterNetworkCallback()
+                    unregisterScreenReceiver()
                     eventSink = null
                     lastEmitted = null
                 }
@@ -86,9 +92,47 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         unregisterNetworkCallback()
+        unregisterScreenReceiver()
         eventSink = null
         super.onDestroy()
     }
+
+    // region 亮屏事件
+
+    /**
+     * 亮屏后发 `wake`：锁屏期间 doze 可能断开认证，醒来时 Dart 侧会重新认证一次。
+     * 只在 Dart 侧订阅存在时注册，避免无人消费时空跑。
+     */
+    private fun registerScreenReceiver() {
+        if (screenReceiver != null) return
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (intent?.action != Intent.ACTION_SCREEN_ON) return
+                val snapshot = currentNetworkSnapshot()
+                emit("wake", snapshot["ssid"] as String?, snapshot["type"] as String)
+            }
+        }
+        try {
+            // ACTION_SCREEN_ON 是受保护的系统广播，Android 14 的 RECEIVER_EXPORTED
+            // 标志要求不适用于它。
+            registerReceiver(receiver, IntentFilter(Intent.ACTION_SCREEN_ON))
+            screenReceiver = receiver
+        } catch (e: Exception) {
+            Log.w(TAG, "注册亮屏监听失败", e)
+        }
+    }
+
+    private fun unregisterScreenReceiver() {
+        val receiver = screenReceiver ?: return
+        screenReceiver = null
+        try {
+            unregisterReceiver(receiver)
+        } catch (e: Exception) {
+            Log.w(TAG, "注销亮屏监听失败", e)
+        }
+    }
+
+    // endregion
 
     // region 网络回调
 

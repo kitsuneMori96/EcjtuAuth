@@ -688,6 +688,60 @@ void main() {
       });
     });
 
+    test('亮屏事件 2 秒后重新认证', () {
+      fakeAsync((async) {
+        final eportal = _FakeEportal(['x' * 100, 'x' * 120]);
+        final nlm = _FakeNlm();
+        final service = _makeServiceSync(
+          async,
+          eportal: eportal,
+          nlmService: nlm,
+          settings: const AppSettings(offlinePageLength: 100),
+        );
+
+        nlm.emit('wake', '', NetworkType.wifi);
+        async.flushMicrotasks();
+        expect(
+          service.logLines.any((line) => line.contains('检测到休眠唤醒')),
+          isTrue,
+        );
+        expect(eportal.fetchCount, 0, reason: '唤醒后要等 2 秒再认证');
+
+        async.elapse(const Duration(seconds: 2));
+        expect(
+          service.logLines.any((line) => line.contains('来源: wake')),
+          isTrue,
+        );
+
+        // 登录后还有 300ms 生效等待
+        async.elapse(const Duration(milliseconds: 400));
+        expect(service.state, NetState.online);
+        service.dispose();
+      });
+    });
+
+    test('5 秒内重复亮屏事件被去抖', () {
+      fakeAsync((async) {
+        final nlm = _FakeNlm();
+        final service = _makeServiceSync(
+          async,
+          eportal: _FakeEportal(['x' * 100, 'x' * 120]),
+          nlmService: nlm,
+          settings: const AppSettings(offlinePageLength: 100),
+        );
+
+        nlm.emit('wake', '', NetworkType.wifi);
+        nlm.emit('wake', '', NetworkType.wifi);
+        async.flushMicrotasks();
+
+        expect(
+          service.logLines.where((line) => line.contains('去抖')).length,
+          1,
+        );
+        service.dispose();
+      });
+    });
+
     test('换网事件把退避拉回初始间隔', () {
       fakeAsync((async) {
         final eportal = _FakeEportal([_timeout]);
