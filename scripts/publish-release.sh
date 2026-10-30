@@ -7,6 +7,8 @@
 #
 # release 正文**不手写**：从 CHANGELOG.md 中抽取 `## <version>` 章节。
 # 抽不到直接失败，避免把旧版本内容或整个 CHANGELOG 发上去。
+#
+# 资产上传走 curl 直连（--noproxy + HTTP/1.1），不走 gh 的代理通道：见下方注释。
 set -euo pipefail
 
 REPO="kitsuneMori96/EcjtuAuth"
@@ -104,7 +106,8 @@ if [[ $DRY_RUN -eq 1 ]]; then
     echo "   - 删除已存在的 release ${VERSION}"
   fi
   echo "   - gh run download ${RUN_ID} --repo ${REPO}"
-  echo "   - gh release create ${VERSION} --title v${VERSION} --prerelease --notes-file <CHANGELOG 章节>"
+  echo "   - gh release create ${VERSION} --title v${VERSION} --prerelease --notes-file <CHANGELOG 章节>（不带资产）"
+  echo "   - 逐个 curl --noproxy '*' --http1.1 直传 uploads.github.com（绕过代理）"
   echo "✅ DRY RUN 结束（未改动远端）"
   exit 0
 fi
@@ -130,20 +133,66 @@ if gh release view "$VERSION" --repo "$REPO" >/dev/null 2>&1; then
   gh release delete "$VERSION" --repo "$REPO" --yes
 fi
 
-# ─── 创建 release ────────────────────────────────────
-ARGS=(
-  --repo "$REPO"
-  --title "v${VERSION}"
-  --prerelease
+# ─── 创建 release（先不挂资产）───────────────────────
+# 资产**不**交给 gh release create：经代理上传大文件会在约 7MB 处 HTTP 408
+# （Upload body timed out due to inactivity），重试也一样。改成先建空 release，
+# 再用 curl 直连 uploads.github.com + HTTP/1.1 逐个上传，见下方 upload_asset。
+gh release create "$VERSION" \
+  --repo "$REPO" \
+  --title "v${VERSION}" \
+  --prerelease \
   --notes-file "$NOTES_FILE"
-  "$WIN_ZIP"
-)
 
-if [[ -n "$APK" ]]; then
-  ARGS+=("$APK")
+RELEASE_ID=$(gh api "repos/${REPO}/releases/tags/${VERSION}" --jq .id)
+if [[ -z "$RELEASE_ID" || "$RELEASE_ID" == "null" ]]; then
+  echo "❌ 无法获取 release id（${VERSION}）" >&2
+  exit 1
 fi
 
-gh release create "$VERSION" "${ARGS[@]}"
+# ─── 直传资产 ────────────────────────────────────────
+TOKEN=$(gh auth token -h github.com)
+
+upload_asset() {
+  local file="$1"
+  local name
+  name=$(basename "$file")
+  local size
+  size=$(wc -c < "$file" | tr -d ' ')
+  local url="https://uploads.github.com/repos/${REPO}/releases/${RELEASE_ID}/assets?name=${name}"
+
+  echo "⬆️ 上传 ${name}（${size} 字节）"
+  local code
+  code=$(curl -sS --noproxy '*' --http1.1 -X POST \
+    -H "Authorization: token ${TOKEN}" \
+    -H "Content-Type: application/octet-stream" \
+    --data-binary "@${file}" \
+    --output /dev/null --write-out '%{http_code}' \
+    "$url") || code="000"
+
+  if [[ "$code" != "201" ]]; then
+    echo "❌ 上传 ${name} 失败（HTTP ${code}）" >&2
+    # 清掉可能已建出的残缺资产，否则同名再传会 422。
+    local asset_id
+    asset_id=$(gh api "repos/${REPO}/releases/${RELEASE_ID}/assets" \
+      --jq "[.[] | select(.name == \"${name}\")][0].id // empty" 2>/dev/null || true)
+    if [[ -n "$asset_id" ]]; then
+      gh api --method DELETE "repos/${REPO}/releases/assets/${asset_id}" >/dev/null 2>&1 || true
+      echo "   已清理残缺资产 ${name}" >&2
+    fi
+    echo "   重跑本脚本会删掉该 release 并从头再来。" >&2
+    return 1
+  fi
+  echo "✅ ${name} 上传完成"
+}
+
+upload_asset "$WIN_ZIP"
+if [[ -n "$APK" ]]; then
+  upload_asset "$APK"
+fi
+
+# 逐个核对状态，避免「上传返回 201 但资产停在 starter」这种假成功。
+gh api "repos/${REPO}/releases/${RELEASE_ID}/assets" \
+  --jq '.[] | "   - \(.name): \(.state) (\(.size) 字节)"'
 
 echo ""
 echo "✅ v${VERSION} 已发布"
