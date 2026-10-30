@@ -59,6 +59,7 @@ class AutoConnectService extends ChangeNotifier {
   Timer? _retryTimer;
   int _attempt = 0;
   int _authFailStreak = 0;
+  int _transportRetries = 0;
   bool _refreshing = false;
   bool _disposed = false;
   DateTime? _lastWakeAt;
@@ -78,6 +79,9 @@ class AutoConnectService extends ChangeNotifier {
   AppSettings _settingsLoaded = const AppSettings();
 
   bool get busy => _inFlight != null || _refreshing;
+
+  @visibleForTesting
+  int get authFailStreak => _authFailStreak;
 
   Future<void> loadSettings() async {
     _settingsLoaded = await settingsStore.load();
@@ -133,6 +137,19 @@ class AutoConnectService extends ChangeNotifier {
     return ssid.isEmpty ? null : ssid;
   }
 
+  /// 当前网络快照（类型 + SSID 可见性）。
+  ///
+  /// 返回 null 表示平台通道不可用（老原生实现），调用方需回退旧判定。
+  Future<CurrentNetwork?> probeNetwork() async {
+    final nlm = _nlmService;
+    if (nlm == null) return null;
+    try {
+      return await nlm.currentNetwork();
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// 最近一次网络事件里的 SSID，供 UI 在换网后即时更新。
   String? get lastSsid => _lastSsid;
 
@@ -148,12 +165,36 @@ class AutoConnectService extends ChangeNotifier {
 
   // ─── 统一登录逻辑 ───────────────────────────────────
 
-  Future<ConnectOutcome> _doLogin(Stopwatch totalSw) async {
+  Future<ConnectOutcome> _doLogin(
+    Stopwatch totalSw, {
+    bool force = false,
+  }) async {
     final account = await _credentials.read();
     if (account == null || !account.isValid) {
+      // 账号缺失不是认证失败：重试再多次也没用，只会刷出误导性的「请检查账号信息」。
+      final onCampus = _isCampusSsid(await _readSsid());
       log('未配置账号，无法认证');
-      _updateStatus(state, detail: '未配置账号');
-      return ConnectOutcome.authFailed;
+      _updateStatus(
+        onCampus ? NetState.campusBlocked : NetState.noCampusWifi,
+        detail: '未配置账号，请到「账号」页填写',
+      );
+      return ConnectOutcome.noAccount;
+    }
+
+    // 只有明确是蜂窝或没有网络时才跳过认证：
+    // unknown 是老原生包/通道异常，ethernet 是有线校园网，两者都要走原流程。
+    if (!force) {
+      final network = await probeNetwork();
+      if (network != null &&
+          (network.type == NetworkType.cellular ||
+              network.type == NetworkType.none)) {
+        final text = network.type == NetworkType.cellular
+            ? '当前为移动数据，未连接校园网'
+            : '当前没有可用网络';
+        log('网络类型 ${network.type.name}，不发起认证');
+        _updateStatus(NetState.noCampusWifi, detail: text);
+        return ConnectOutcome.notOnCampus;
+      }
     }
 
     final ssid = await _readSsid();
@@ -186,7 +227,7 @@ class AutoConnectService extends ChangeNotifier {
     if (fetchError != null) {
       _updateStatus(
         onCampus ? NetState.campusBlocked : NetState.noCampusWifi,
-        detail: '${fetchError.failure.label}：${fetchError.message}',
+        detail: '${fetchError.failure.label}｜${fetchError.failure.hint}',
       );
       if (!onCampus) return ConnectOutcome.notOnCampus;
       if (_lastIp == null) {
@@ -234,7 +275,7 @@ class AutoConnectService extends ChangeNotifier {
       );
       _updateStatus(
         onCampus ? NetState.campusBlocked : NetState.noCampusWifi,
-        detail: '${e.failure.label}：${e.message}',
+        detail: '${e.failure.label}｜${e.failure.hint}',
       );
       return ConnectOutcome.portalUnreachable;
     }
@@ -284,21 +325,26 @@ class AutoConnectService extends ChangeNotifier {
   // ─── 入口方法（single-flight）────────────────────────
 
   /// 快速连接：直接登录 → 验证。
-  Future<ConnectOutcome> connectNow() => _single(_connect);
+  Future<ConnectOutcome> connectNow({String source = 'manual'}) =>
+      _single(source, () => _connect(source));
 
   /// 完整「检测→认证→复验」流程；已在线时直接返回。
-  Future<ConnectOutcome> connectOnce() {
-    final existing = _inFlight;
-    if (existing != null) return existing;
-    if (state == NetState.online) {
+  Future<ConnectOutcome> connectOnce({String source = 'auto'}) {
+    if (_inFlight == null && state == NetState.online) {
       return Future.value(ConnectOutcome.alreadyOnline);
     }
-    return _single(_connect);
+    return _single(source, () => _connect(source));
   }
 
-  Future<ConnectOutcome> _single(Future<ConnectOutcome> Function() body) {
+  Future<ConnectOutcome> _single(
+    String source,
+    Future<ConnectOutcome> Function() body,
+  ) {
     final existing = _inFlight;
-    if (existing != null) return existing;
+    if (existing != null) {
+      log('已有检查进行中，合并来源: $source');
+      return existing;
+    }
 
     final future = _run(body);
     _inFlight = future;
@@ -315,13 +361,18 @@ class AutoConnectService extends ChangeNotifier {
     }
   }
 
-  Future<ConnectOutcome> _connect() async {
+  Future<ConnectOutcome> _connect(String source) async {
+    log('开始检查（来源: $source）');
     if (state != NetState.online) {
       _updateStatus(NetState.checking, detail: '正在连接…');
     }
     final totalSw = Stopwatch()..start();
     try {
-      return await _doLogin(totalSw).timeout(_overallTimeout);
+      // 手动「一键认证」强制覆盖网络类型判定（VPN 等场景下蜂窝也能访问 portal）。
+      return await _doLogin(
+        totalSw,
+        force: source == 'manual',
+      ).timeout(_overallTimeout);
     } on TimeoutException {
       log('连接超时（${_overallTimeout.inSeconds}s），请重试');
       _updateStatus(
@@ -349,10 +400,16 @@ class AutoConnectService extends ChangeNotifier {
 
   Future<void> _retryTick() async {
     if (_disposed) return;
-    final outcome = await connectOnce();
+    final outcome = await connectOnce(source: 'retry');
     if (_disposed) return;
     if (outcome.isGood) {
       _authFailStreak = 0;
+      _transportRetries = 0;
+      return;
+    }
+
+    if (outcome == ConnectOutcome.noAccount) {
+      log('已停止自动重试：本地没有账号');
       return;
     }
 
@@ -369,6 +426,29 @@ class AutoConnectService extends ChangeNotifier {
     } else if (outcome == ConnectOutcome.unverified) {
       log('缺少离线页面长度基准，已停止自动重试；请在设置中获取最新长度');
       return;
+    } else if (outcome == ConnectOutcome.portalUnreachable ||
+        outcome == ConnectOutcome.notOnCampus) {
+      _authFailStreak = 0;
+      // 蜂窝/断网时重试毫无意义，等 NLM 事件把网络切回来再试，避免锁屏 doze 期间空转。
+      final network = await probeNetwork();
+      if (network != null &&
+          (network.type == NetworkType.cellular ||
+              network.type == NetworkType.none)) {
+        log('网络类型 ${network.type.name}，暂停自动重试，等待网络切换');
+        return;
+      }
+      if (outcome == ConnectOutcome.portalUnreachable) {
+        _transportRetries += 1;
+        if (_transportRetries >= _policy.maxTransportRetries) {
+          log('认证服务器连续 $_transportRetries 次不可达，已停止自动重试');
+          _updateStatus(
+            NetState.unknown,
+            detail: '认证服务器连续 $_transportRetries 次不可达，已暂停自动重试；'
+                '请检查是否开启代理或 VPN',
+          );
+          return;
+        }
+      }
     } else {
       _authFailStreak = 0;
     }
@@ -392,7 +472,7 @@ class AutoConnectService extends ChangeNotifier {
 
   // ─── 状态查询 ───────────────────────────────────────
 
-  Future<NetState> refreshState() async {
+  Future<NetState> refreshState({String source = 'manual'}) async {
     if (_inFlight != null || _refreshing) return state;
     _refreshing = true;
     _notify();
@@ -402,7 +482,7 @@ class AutoConnectService extends ChangeNotifier {
       _checker.offlinePageLength = _settingsLoaded.offlinePageLength;
       final result = await _safeCheck().timeout(_overallTimeout);
       _applyCheck(result);
-      log('${sw.elapsedMilliseconds}ms | 刷新状态 → ${_describe(result)}');
+      log('${sw.elapsedMilliseconds}ms | 刷新状态（来源 $source）→ ${_describe(result)}');
       return state;
     } on TimeoutException {
       log('状态检测超时（${_overallTimeout.inSeconds}s）');
@@ -500,7 +580,7 @@ class AutoConnectService extends ChangeNotifier {
     String? detail;
     if (result.failure != null) {
       visible = onCampus ? NetState.campusBlocked : NetState.noCampusWifi;
-      detail = result.failure!.label;
+      detail = '${result.failure!.label}｜${result.failure!.hint}';
     } else if (result.needsCalibration) {
       visible = NetState.unknown;
       detail = '未校准离线页面长度，请在设置中获取最新长度';
@@ -526,11 +606,30 @@ class AutoConnectService extends ChangeNotifier {
 
   // ─── 网络事件 ───────────────────────────────────────
 
+  /// 换网后旧的失败累计属于上一个网络，必须清零。
+  ///
+  /// 否则在蜂窝上攒满 3 次，一切回校园网就会被直接判定「连续失败」而停止重试。
+  void _resetFailures(String reason) {
+    _attempt = 0;
+    _transportRetries = 0;
+    if (_authFailStreak == 0) return;
+    log('$reason，重置连续失败计数（此前 $_authFailStreak 次）');
+    _authFailStreak = 0;
+  }
+
   void _onNetworkEvent(NlmNetworkEvent event) {
     if (_disposed) return;
+    final previousSsid = _lastSsid;
     log('NLM 事件: ${event.event} (ssid=${event.ssid})');
     if (event.ssid.isNotEmpty) {
       _lastSsid = event.ssid.trim().replaceAll('"', '');
+    }
+    if (event.isDisconnected) {
+      _resetFailures('WiFi 断开');
+    } else if (event.ssid.isNotEmpty &&
+        previousSsid != null &&
+        _lastSsid != previousSsid) {
+      _resetFailures('网络变化 → $_lastSsid');
     }
 
     if (event.isWake) {
@@ -549,12 +648,12 @@ class AutoConnectService extends ChangeNotifier {
       });
     } else if (event.isConnected) {
       startAutoRetry();
-      unawaited(connectOnce());
+      unawaited(connectOnce(source: 'event'));
     } else if (event.isDisconnected) {
       // WiFi 断开不等于没网（可能还有以太网），交给 portal 重新判定。
       _updateStatus(NetState.unknown, detail: 'WiFi 已断开，重新检测…');
       cancelAutoRetry();
-      unawaited(refreshState());
+      unawaited(refreshState(source: 'event'));
     }
   }
 
@@ -562,7 +661,7 @@ class AutoConnectService extends ChangeNotifier {
   Future<void> reconnectAfterWake() async {
     _updateStatus(NetState.checking, detail: '唤醒后重新认证');
     for (var i = 0; i < 3; i++) {
-      final outcome = await connectNow();
+      final outcome = await connectNow(source: 'wake');
       if (outcome.isGood) {
         log('唤醒后认证成功');
         return;

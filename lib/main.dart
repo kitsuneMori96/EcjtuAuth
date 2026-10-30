@@ -67,7 +67,7 @@ class _EcjtuAuthAppState extends State<EcjtuAuthApp> {
         }
       });
     });
-    widget.desktop.initTray(onConnect: () => service.connectNow());
+    widget.desktop.initTray(onConnect: () => service.connectNow(source: 'tray'));
   }
 
   Future<void> _autoConnectOnStartup() async {
@@ -76,11 +76,11 @@ class _EcjtuAuthAppState extends State<EcjtuAuthApp> {
     if (cleanSsid.contains(service.settings.ssidCampus) ||
         cleanSsid.contains(service.settings.ssidFree)) {
       service.log('检测到校园 WiFi: $cleanSsid，尝试连接');
-      service.connectNow();
+      service.connectNow(source: 'startup');
     } else if (cleanSsid.isEmpty) {
       // 无 SSID → 可能是有线连接，尝试 portal 检测
       service.log('未检测到校园 WiFi，尝试连接');
-      service.connectNow();
+      service.connectNow(source: 'startup');
     }
   }
 
@@ -125,7 +125,10 @@ class _HomeShellState extends State<HomeShell> {
   Widget build(BuildContext context) {
     final pages = [
       HomeScreen(service: widget.service),
-      AccountScreen(credentialStore: _store),
+      AccountScreen(
+        credentialStore: _store,
+        onSaved: () => widget.service.connectNow(source: 'account-saved'),
+      ),
       SettingsScreen(service: widget.service),
     ];
     return Scaffold(

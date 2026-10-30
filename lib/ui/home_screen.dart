@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -5,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../models/net_state.dart';
+import '../platform/nlm_service.dart';
 import '../services/auto_connect.dart';
 import 'widgets/log_view.dart';
 import 'widgets/status_card.dart';
@@ -20,7 +22,10 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
+  CurrentNetwork? _network;
   String? _ssid;
+  NetState? _seenState;
+  String? _seenSsid;
 
   @override
   void initState() {
@@ -34,33 +39,59 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (Platform.isAndroid) {
       await Permission.location.request();
     }
-    await _refreshSsid();
+    await _refreshNetwork();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _refreshSsid();
+      _refreshNetwork();
       if (Platform.isAndroid && widget.service.settings.autoConnectOnResume) {
-        widget.service.connectNow();
+        widget.service.connectNow(source: 'resume');
       }
     }
   }
 
-  Future<void> _refreshSsid() async {
-    try {
-      final ssid = await widget.service.probeSsid();
-      if (mounted) setState(() => _ssid = ssid);
-    } catch (_) {}
+  /// 网络快照能区分「没有 WiFi」和「有 WiFi 但读不到名字」，SSID 单查做不到。
+  Future<void> _refreshNetwork() async {
+    final net = await widget.service.probeNetwork();
+    if (!mounted) return;
+    if (net != null) {
+      setState(() => _network = net);
+      return;
+    }
+    final ssid = await widget.service.probeSsid();
+    if (!mounted) return;
+    setState(() {
+      _network = null;
+      _ssid = ssid;
+    });
   }
 
-  /// 在线却拿不到 SSID → 有线连接。启动时探测跑在认证完成前，
-  /// 所以显示值要随状态实时推导，不能只在探测时判定一次。
-  String? get _displaySsid =>
-      (_ssid == null || _ssid!.isEmpty) &&
-          widget.service.state == NetState.online
-      ? '以太网'
-      : _ssid;
+  /// 在线却什么都读不到 → 有线连接（Windows 的 WLAN 查询给不出以太网）；
+  /// 有 WiFi 但名字不可见 → 权限/ROM 限制，要和「未检测到 WiFi」分开说。
+  String? get _displaySsid {
+    final net = _network;
+    if (net != null) {
+      switch (net.type) {
+        case NetworkType.wifi:
+          return net.hasSsid ? net.ssid : '已连 WiFi，名称不可见';
+        case NetworkType.ethernet:
+          return '以太网';
+        case NetworkType.cellular:
+          return null;
+        case NetworkType.none:
+          return widget.service.state == NetState.online ? '以太网' : null;
+        case NetworkType.unknown:
+          break;
+      }
+    }
+    if ((_ssid == null || _ssid!.isEmpty) &&
+        widget.service.state == NetState.online) {
+      return '以太网';
+    }
+    return _ssid;
+  }
 
   void _onServiceChanged() {
     if (!mounted) return;
@@ -68,14 +99,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final eventSsid = widget.service.lastSsid;
     if (eventSsid != null && eventSsid.isNotEmpty && eventSsid != _ssid) {
       setState(() => _ssid = eventSsid);
-      return;
+    }
+    final state = widget.service.state;
+    if (state != _seenState || eventSsid != _seenSsid) {
+      _seenState = state;
+      _seenSsid = eventSsid;
+      // 事件只带 SSID，网络类型与名称可见性只有查询接口能给。
+      unawaited(_refreshNetwork());
     }
     setState(() {});
   }
 
   Future<void> _refreshAll() async {
     await widget.service.refreshState();
-    await _refreshSsid();
+    await _refreshNetwork();
   }
 
   Future<void> _connect() async {

@@ -37,6 +37,9 @@ enum ConnectOutcome {
   /// 学号/密码/运营商错误或服务器拒绝。
   authFailed,
 
+  /// 本地没有可用的账号，压根没发起认证。
+  noAccount,
+
   /// 当前不在校园网环境。
   notOnCampus,
 
@@ -58,6 +61,7 @@ extension ConnectOutcomeX on ConnectOutcome {
     ConnectOutcome.alreadyOnline => '本就在线，无需认证',
     ConnectOutcome.success => '认证成功',
     ConnectOutcome.authFailed => '认证失败，请检查账号信息',
+    ConnectOutcome.noAccount => '未配置账号',
     ConnectOutcome.notOnCampus => '未连接校园网 WiFi',
     ConnectOutcome.portalUnreachable => '认证服务器不可达',
     ConnectOutcome.unverified => '已提交认证，但无法验证结果（未校准长度）',
@@ -70,6 +74,7 @@ extension ConnectOutcomeX on ConnectOutcome {
     ConnectOutcome.notOnCampus => '请先连接 ECJTU-Stu 或 EcjtuLib_Free',
     ConnectOutcome.portalUnreachable => '若开着代理或 VPN，请关闭后重试；也可能是校园网维护中',
     ConnectOutcome.authFailed => '请核对学号、密码与运营商是否正确',
+    ConnectOutcome.noAccount => '请到「账号」页填写学号、密码与运营商',
     ConnectOutcome.unverified => '到设置页点「从仓库获取最新长度」校准后再试',
     ConnectOutcome.failed => '请复制日志提交 Issue 以便排查',
   };
