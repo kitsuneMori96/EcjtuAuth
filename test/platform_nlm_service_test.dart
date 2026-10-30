@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:ecjtu_auth/platform/nlm_service.dart';
 import 'package:ecjtu_auth/platform/wifi_probe.dart';
 import 'package:flutter/services.dart';
@@ -99,10 +101,15 @@ void main() {
       expect(await service.getCurrentSsid(), isNull);
     });
 
-    test('P2: 单测运行在 Linux，默认守卫为 false', () {
+    test('P2: 默认守卫跟随宿主平台（Windows/Android 才启用）', () {
       final service = NlmService();
       addTearDown(service.dispose);
-      expect(service.isSupported, isFalse);
+      // release 构建会在 windows-latest 上跑一遍测试，不能假定宿主是 Linux。
+      if (Platform.isWindows || Platform.isAndroid) {
+        expect(service.isSupported, isTrue);
+      } else {
+        expect(service.isSupported, isFalse);
+      }
     });
   });
 
@@ -249,7 +256,11 @@ void main() {
       });
       final service = NlmService(supportedPlatform: true);
       addTearDown(service.dispose);
-      final probe = WifiProbe(nlmService: service, androidOverride: true);
+      final probe = WifiProbe(
+        nlmService: service,
+        androidOverride: true,
+        windowsOverride: false,
+      );
 
       expect(await probe.currentSsid(), isNull);
       expect(pluginCalls, 0, reason: '插件若被调用，就会出现第二个 SSID 来源');
@@ -261,7 +272,11 @@ void main() {
       });
       final service = NlmService(supportedPlatform: true);
       addTearDown(service.dispose);
-      final probe = WifiProbe(nlmService: service, androidOverride: true);
+      final probe = WifiProbe(
+        nlmService: service,
+        androidOverride: true,
+        windowsOverride: false,
+      );
 
       expect(await probe.currentSsid(), 'PLUGIN-SSID');
       expect(pluginCalls, greaterThan(0));
@@ -277,7 +292,11 @@ void main() {
       });
       final service = NlmService(supportedPlatform: true);
       addTearDown(service.dispose);
-      final probe = WifiProbe(nlmService: service, androidOverride: true);
+      final probe = WifiProbe(
+        nlmService: service,
+        androidOverride: true,
+        windowsOverride: false,
+      );
 
       expect(await probe.currentSsid(), isNull);
     });
