@@ -71,12 +71,15 @@ class _FakeCredentials extends CredentialStore {
   Future<CampusAccount?> read() async => account;
 }
 
+const _testAccount = CampusAccount(username: '20230001', password: 'secret');
+
 Future<AutoConnectService> _makeService({
   required _FakeEportal eportal,
   AppSettings settings = const AppSettings(),
   Future<(int, String)?> Function()? fetchLength,
   String? ssid = 'ECJTU-Stu',
   NlmService? nlmService,
+  CampusAccount? account = _testAccount,
 }) async {
   SharedPreferences.setMockInitialValues({});
   final prefs = await SharedPreferences.getInstance();
@@ -86,9 +89,7 @@ Future<AutoConnectService> _makeService({
   final service = AutoConnectService(
     eportal: eportal,
     checker: NetworkChecker(eportal: eportal),
-    credentials: _FakeCredentials(
-      const CampusAccount(username: '20230001', password: 'secret'),
-    ),
+    credentials: _FakeCredentials(account),
     settings: store,
     nlmService: nlmService,
     currentSsid: () async => ssid,
@@ -239,6 +240,39 @@ void main() {
       await pumpEventQueue();
 
       expect(service.lastSsid, 'ECJTU-Stu');
+    });
+
+    test('未配置账号：不认证、不排重试，提示去账号页', () async {
+      final eportal = _FakeEportal(['x' * 100]);
+      final service = await _makeService(
+        eportal: eportal,
+        account: null,
+        settings: const AppSettings(
+          offlinePageLength: 100,
+          baseRetryDelaySec: 0,
+          maxRetryDelaySec: 0,
+        ),
+      );
+
+      final outcome = await service.connectNow();
+      expect(outcome, ConnectOutcome.noAccount);
+      expect(eportal.loginCount, 0);
+      expect(eportal.fetchCount, 0);
+      expect(service.statusDetail, contains('账号'));
+
+      service.startAutoRetry();
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      expect(
+        service.logLines.any((line) => line.contains('已停止自动重试')),
+        isTrue,
+      );
+      expect(
+        service.logLines.any((line) => line.contains('后重试')),
+        isFalse,
+        reason: '缺账号重试毫无意义',
+      );
+      service.dispose();
     });
 
     test('连续认证失败 3 次后停止自动重试', () async {

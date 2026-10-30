@@ -151,9 +151,14 @@ class AutoConnectService extends ChangeNotifier {
   Future<ConnectOutcome> _doLogin(Stopwatch totalSw) async {
     final account = await _credentials.read();
     if (account == null || !account.isValid) {
+      // 账号缺失不是认证失败：重试再多次也没用，只会刷出误导性的「请检查账号信息」。
+      final onCampus = _isCampusSsid(await _readSsid());
       log('未配置账号，无法认证');
-      _updateStatus(state, detail: '未配置账号');
-      return ConnectOutcome.authFailed;
+      _updateStatus(
+        onCampus ? NetState.campusBlocked : NetState.noCampusWifi,
+        detail: '未配置账号，请到「账号」页填写',
+      );
+      return ConnectOutcome.noAccount;
     }
 
     final ssid = await _readSsid();
@@ -353,6 +358,11 @@ class AutoConnectService extends ChangeNotifier {
     if (_disposed) return;
     if (outcome.isGood) {
       _authFailStreak = 0;
+      return;
+    }
+
+    if (outcome == ConnectOutcome.noAccount) {
+      log('已停止自动重试：本地没有账号');
       return;
     }
 
