@@ -51,12 +51,18 @@ class _FakeEportal extends EportalClient {
 }
 
 class _FakeNlm extends NlmService {
-  _FakeNlm() : super(supportedPlatform: true);
+  _FakeNlm([this.network]) : super(supportedPlatform: true);
+
+  /// null 表示平台通道不可用（老原生包），调用方应回退旧行为。
+  CurrentNetwork? network;
 
   final _controller = StreamController<NlmNetworkEvent>.broadcast();
 
   @override
   Stream<NlmNetworkEvent> get onNetworkChanged => _controller.stream;
+
+  @override
+  Future<CurrentNetwork?> currentNetwork() async => network;
 
   void emit(String type, [String ssid = '']) =>
       _controller.add(NlmNetworkEvent(event: type, ssid: ssid));
@@ -337,6 +343,82 @@ void main() {
         isTrue,
         reason: '锁屏期间的检查要能说清是谁触发的',
       );
+      service.dispose();
+    });
+
+    test('蜂窝网络不发起认证，手动认证强制覆盖', () async {
+      final eportal = _FakeEportal(['x' * 100]);
+      final nlm = _FakeNlm(
+        const CurrentNetwork(
+          type: NetworkType.cellular,
+          ssid: '',
+          ssidVisible: false,
+        ),
+      );
+      final service = await _makeService(
+        eportal: eportal,
+        nlmService: nlm,
+        settings: const AppSettings(offlinePageLength: 100),
+      );
+
+      final outcome = await service.connectOnce();
+      expect(outcome, ConnectOutcome.notOnCampus);
+      expect(eportal.fetchCount, 0);
+      expect(service.state, NetState.noCampusWifi);
+
+      // 一键认证不看网络类型（VPN 等场景下蜂窝也能访问 portal）
+      await service.connectNow();
+      expect(eportal.fetchCount, greaterThan(0));
+      expect(eportal.loginCount, 1);
+    });
+
+    test('蜂窝上不排重试', () async {
+      final eportal = _FakeEportal(['x' * 100]);
+      final nlm = _FakeNlm(
+        const CurrentNetwork(
+          type: NetworkType.cellular,
+          ssid: '',
+          ssidVisible: false,
+        ),
+      );
+      final service = await _makeService(
+        eportal: eportal,
+        nlmService: nlm,
+        settings: const AppSettings(
+          offlinePageLength: 100,
+          baseRetryDelaySec: 0,
+          maxRetryDelaySec: 0,
+        ),
+      );
+
+      service.startAutoRetry();
+      await _waitUntil(
+        () => service.logLines.any((line) => line.contains('暂停自动重试')),
+      );
+      expect(service.logLines.any((line) => line.contains('后重试')), isFalse);
+      service.dispose();
+    });
+
+    test('portal 连续不可达 5 次后停止重试', () async {
+      final eportal = _FakeEportal([_timeout]);
+      final service = await _makeService(
+        eportal: eportal,
+        settings: const AppSettings(
+          offlinePageLength: 100,
+          baseRetryDelaySec: 0,
+          maxRetryDelaySec: 0,
+        ),
+      );
+
+      service.startAutoRetry();
+      await _waitUntil(
+        () => service.logLines.any((line) => line.contains('连续 5 次不可达')),
+      );
+      expect(service.statusDetail, contains('代理'));
+
+      final fetches = eportal.fetchCount;
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(eportal.fetchCount, fetches);
       service.dispose();
     });
 

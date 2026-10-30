@@ -11,6 +11,7 @@ void main() {
     test('每种失败都给可操作建议', () {
       const failures = [
         ConnectOutcome.authFailed,
+        ConnectOutcome.noAccount,
         ConnectOutcome.notOnCampus,
         ConnectOutcome.portalUnreachable,
         ConnectOutcome.unverified,

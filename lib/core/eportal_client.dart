@@ -193,12 +193,25 @@ class EportalClient {
       );
     }
     if (error is http.ClientException) {
+      // package:http 会把部分 SocketException 包成 ClientException，
+      // 直接看文本才能把「连接被拒」和「网络不可达」分开。
+      final refused = _looksRefused(error.message);
       return PortalException(
-        PortalFailure.unreachable,
+        refused ? PortalFailure.refused : PortalFailure.unreachable,
         '$action 失败: ${error.message}',
       );
     }
+    if (_looksRefused('$error')) {
+      return PortalException(PortalFailure.refused, '$action 失败: $error');
+    }
     return PortalException(PortalFailure.unknown, '$action 失败: $error');
+  }
+
+  bool _looksRefused(String message) {
+    final text = message.toLowerCase();
+    return text.contains('refused') ||
+        text.contains('errno = 111') ||
+        text.contains('10061');
   }
 
   String _snippet(String body) {
