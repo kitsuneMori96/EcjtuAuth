@@ -13,19 +13,26 @@ import 'nlm_service.dart';
 /// `WifiManager.connectionInfo`，但实测在「撤销定位权限」时给出不同结果
 /// （卡片显示 ECJTU-Stu、事件 ssid 为空），导致 UI 文案与核心层判定互相矛盾。
 class WifiProbe {
-  /// [androidOverride] 仅用于测试注入，生产代码不要传。
-  WifiProbe({NlmService? nlmService, bool? androidOverride})
-      : _nlmService = nlmService,
-        _androidOverride = androidOverride;
+  /// [androidOverride] / [windowsOverride] 仅用于测试注入，生产代码不要传。
+  /// 测试跑在哪个宿主平台是随机的，注入后 Android/Windows 分支才可复现。
+  WifiProbe({
+    NlmService? nlmService,
+    bool? androidOverride,
+    bool? windowsOverride,
+  })  : _nlmService = nlmService,
+        _androidOverride = androidOverride,
+        _windowsOverride = windowsOverride;
 
   final NlmService? _nlmService;
   final bool? _androidOverride;
+  final bool? _windowsOverride;
   static final NetworkInfo _info = NetworkInfo();
 
   bool get _isAndroid => _androidOverride ?? Platform.isAndroid;
+  bool get _isWindows => _windowsOverride ?? Platform.isWindows;
 
   Future<String?> currentSsid() async {
-    if (Platform.isWindows) {
+    if (_isWindows) {
       // 优先用 NLM MethodChannel 获取 SSID，失败回退 netsh。
       final viaNlm = await _nlmService?.getCurrentSsid();
       if (viaNlm != null && viaNlm.isNotEmpty) return viaNlm;
