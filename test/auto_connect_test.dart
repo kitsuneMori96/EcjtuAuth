@@ -374,6 +374,29 @@ void main() {
       service.dispose();
     });
 
+    test('WiFi 关闭后原生发来 cellular connected：不认证且不再显示在线', () async {
+      final eportal = _FakeEportal(['x' * 100, 'x' * 120]);
+      final nlm = _FakeNlm();
+      final service = await _makeService(
+        eportal: eportal,
+        nlmService: nlm,
+        settings: const AppSettings(offlinePageLength: 100),
+      );
+
+      await service.connectNow();
+      expect(service.state, NetState.online);
+      final fetches = eportal.fetchCount;
+
+      nlm.emit('connected', '', NetworkType.cellular);
+      await pumpEventQueue();
+
+      expect(service.state, NetState.noCampusWifi);
+      expect(service.statusDetail, contains('移动数据'));
+      expect(eportal.fetchCount, fetches, reason: '蜂窝上不该发起任何 portal 请求');
+      expect(service.logLines.any((line) => line.contains('跳过认证')), isTrue);
+      service.dispose();
+    });
+
     test('检查入口记录触发来源', () async {
       final eportal = _FakeEportal(['x' * 100]);
       final nlm = _FakeNlm();
