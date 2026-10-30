@@ -620,7 +620,7 @@ class AutoConnectService extends ChangeNotifier {
   void _onNetworkEvent(NlmNetworkEvent event) {
     if (_disposed) return;
     final previousSsid = _lastSsid;
-    log('NLM 事件: ${event.event} (ssid=${event.ssid})');
+    log('NLM 事件: ${event.event} (type=${event.type.name}, ssid=${event.ssid})');
     if (event.ssid.isNotEmpty) {
       _lastSsid = event.ssid.trim().replaceAll('"', '');
     }
@@ -647,6 +647,18 @@ class AutoConnectService extends ChangeNotifier {
         if (state != NetState.online) unawaited(reconnectAfterWake());
       });
     } else if (event.isConnected) {
+      // 「默认网络改为蜂窝」也会发 connected（ssid 为空）。此时校园网必然已断，
+      // 但不能让卡片继续停在「已在线 / 旧 SSID」，也不需要发起认证或排重试。
+      if (event.type == NetworkType.cellular ||
+          event.type == NetworkType.none) {
+        final text = event.type == NetworkType.cellular
+            ? '当前为移动数据，未连接校园网'
+            : '当前没有可用网络';
+        log('默认网络切换为 ${event.type.name}，跳过认证');
+        cancelAutoRetry();
+        _updateStatus(NetState.noCampusWifi, detail: text);
+        return;
+      }
       startAutoRetry();
       unawaited(connectOnce(source: 'event'));
     } else if (event.isDisconnected) {
