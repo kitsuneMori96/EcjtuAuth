@@ -1,24 +1,31 @@
 import 'package:ecjtu_auth/platform/nlm_service.dart';
+import 'package:ecjtu_auth/platform/wifi_probe.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// 覆盖平台守卫与事件解码：Android 接入后 `NlmService` 不再只对 Windows 生效，
-/// 这两条都属于「静默失效、没有编译错误」的风险点，必须由测试锁住。
+/// 覆盖平台通道契约与 SSID 单源逻辑：
+/// - 事件/查询载荷里的 `type`（区分蜂窝与 WiFi、区分「没 WiFi」与「读不到名字」）
+/// - 老原生实现（无 `type` / 无 `getCurrentNetwork`）的向下兼容
+/// - `WifiProbe` 不再把插件与平台通道混用成两个 SSID 来源
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   const eventChannel = EventChannel('ecjtu_auth/network_events');
   const methodChannel = MethodChannel('ecjtu_auth/network_methods');
-  final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+  const pluginChannel = MethodChannel('dev.fluttercommunity.plus/network_info');
+  final messenger =
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
 
   MockStreamHandlerEventSink? sink;
   var listenCount = 0;
   var cancelCount = 0;
+  var pluginCalls = 0;
 
   setUp(() {
     sink = null;
     listenCount = 0;
     cancelCount = 0;
+    pluginCalls = 0;
 
     messenger.setMockStreamHandler(
       eventChannel,
@@ -34,9 +41,21 @@ void main() {
       ),
     );
     messenger.setMockMethodCallHandler(methodChannel, (MethodCall call) async {
+      if (call.method == 'getCurrentNetwork') {
+        return <String, Object?>{
+          'type': 'wifi',
+          'ssid': 'ECJTU-Stu',
+          'ssidVisible': true,
+        };
+      }
       if (call.method == 'getCurrentSsid') {
         return <String, String>{'ssid': 'ECJTU-Stu'};
       }
+      return null;
+    });
+    messenger.setMockMethodCallHandler(pluginChannel, (MethodCall call) async {
+      pluginCalls++;
+      if (call.method == 'wifiName') return 'PLUGIN-SSID';
       return null;
     });
   });
@@ -44,10 +63,30 @@ void main() {
   tearDown(() {
     messenger.setMockStreamHandler(eventChannel, null);
     messenger.setMockMethodCallHandler(methodChannel, null);
+    messenger.setMockMethodCallHandler(pluginChannel, null);
+  });
+
+  group('NetworkType', () {
+    test('N1: 原生字符串映射，未知值兜底为 unknown', () {
+      expect(NetworkType.parse('wifi'), NetworkType.wifi);
+      expect(NetworkType.parse('cellular'), NetworkType.cellular);
+      expect(NetworkType.parse('ethernet'), NetworkType.ethernet);
+      expect(NetworkType.parse('none'), NetworkType.none);
+      // 老原生实现没有该字段；null 不能被当成「无网络」。
+      expect(NetworkType.parse(null), NetworkType.unknown);
+      expect(NetworkType.parse('LTE'), NetworkType.unknown);
+    });
+
+    test('N2: 只有 none 表示没有网络，unknown 不算', () {
+      expect(NetworkType.none.isNoNetwork, isTrue);
+      expect(NetworkType.unknown.isNoNetwork, isFalse);
+      expect(NetworkType.wifi.isWifi, isTrue);
+      expect(NetworkType.cellular.isWifi, isFalse);
+    });
   });
 
   group('NlmService 平台守卫', () {
-    test('P1: 不受支持的平台既不订阅原生事件也拿不到 SSID', () async {
+    test('P1: 不受支持的平台既不订阅原生事件也拿不到网络快照', () async {
       final service = NlmService(supportedPlatform: false);
       addTearDown(service.dispose);
 
@@ -56,11 +95,11 @@ void main() {
       await pumpEventQueue();
 
       expect(listenCount, 0, reason: '不支持的平台不应发起 EventChannel listen');
+      expect(await service.currentNetwork(), isNull);
       expect(await service.getCurrentSsid(), isNull);
     });
 
-    test('P2: Windows/Android 之外的真实平台默认不启用', () {
-      // 单测运行在 Linux，默认守卫应为 false，证明未把守卫写成「恒真」。
+    test('P2: 单测运行在 Linux，默认守卫为 false', () {
       final service = NlmService();
       addTearDown(service.dispose);
       expect(service.isSupported, isFalse);
@@ -68,31 +107,58 @@ void main() {
   });
 
   group('NlmService 事件', () {
-    test('P3: connected/disconnected 解码为 NlmNetworkEvent', () async {
+    test('E1: connected/disconnected 带上 type 解码', () async {
       final service = NlmService(supportedPlatform: true);
       addTearDown(service.dispose);
       service.startListening();
       await pumpEventQueue();
-
-      expect(listenCount, 1);
 
       final received = <NlmNetworkEvent>[];
       final sub = service.onNetworkChanged.listen(received.add);
       addTearDown(sub.cancel);
 
-      sink!.success(<String, String>{'event': 'connected', 'ssid': 'ECJTU-Stu'});
+      sink!.success(<String, String>{
+        'event': 'connected',
+        'ssid': 'ECJTU-Stu',
+        'type': 'wifi',
+      });
       await pumpEventQueue();
-      sink!.success(<String, String>{'event': 'disconnected'});
+      sink!.success(<String, String>{
+        'event': 'connected',
+        'ssid': '',
+        'type': 'cellular',
+      });
+      await pumpEventQueue();
+      sink!.success(<String, String>{'event': 'disconnected', 'type': 'none'});
       await pumpEventQueue();
 
-      expect(received.length, 2);
-      expect(received[0].isConnected, isTrue);
+      expect(received.length, 3);
+      expect(received[0].type, NetworkType.wifi);
       expect(received[0].ssid, 'ECJTU-Stu');
-      expect(received[1].isDisconnected, isTrue);
-      expect(received[1].ssid, '', reason: '载荷缺 ssid 时应归一为空串');
+      expect(received[1].type, NetworkType.cellular);
+      expect(received[1].ssid, '');
+      expect(received[2].isDisconnected, isTrue);
+      expect(received[2].type, NetworkType.none);
     });
 
-    test('P4: 重复 startListening 只注册一次原生订阅', () async {
+    test('E2: 老原生实现不带 type 时降级为 unknown 而不是崩溃', () async {
+      final service = NlmService(supportedPlatform: true);
+      addTearDown(service.dispose);
+      service.startListening();
+      await pumpEventQueue();
+
+      final received = <NlmNetworkEvent>[];
+      final sub = service.onNetworkChanged.listen(received.add);
+      addTearDown(sub.cancel);
+
+      sink!.success(<String, String>{'event': 'connected', 'ssid': 'X'});
+      await pumpEventQueue();
+
+      expect(received.single.type, NetworkType.unknown);
+      expect(received.single.ssid, 'X');
+    });
+
+    test('E3: 重复 startListening 只注册一次原生订阅', () async {
       final service = NlmService(supportedPlatform: true);
       addTearDown(service.dispose);
 
@@ -101,19 +167,15 @@ void main() {
       service.startListening();
       await pumpEventQueue();
 
-      // Android 每次 registerDefaultNetworkCallback 都会新增一个回调，
-      // 重复订阅会成倍放大事件与耗电。
       expect(listenCount, 1);
     });
 
-    test('P5: stopListening 注销原生订阅', () async {
+    test('E4: stopListening 注销原生订阅', () async {
       final service = NlmService(supportedPlatform: true);
       addTearDown(service.dispose);
 
       service.startListening();
       await pumpEventQueue();
-      expect(listenCount, 1);
-
       await service.stopListening();
       await pumpEventQueue();
 
@@ -122,27 +184,102 @@ void main() {
     });
   });
 
-  group('NlmService.getCurrentSsid', () {
-    test('P6: 正常返回 SSID', () async {
+  group('NlmService.currentNetwork', () {
+    test('C1: 返回类型/SSID/可见性', () async {
       final service = NlmService(supportedPlatform: true);
       addTearDown(service.dispose);
 
-      expect(await service.getCurrentSsid(), 'ECJTU-Stu');
+      final network = await service.currentNetwork();
+      expect(network, isNotNull);
+      expect(network!.type, NetworkType.wifi);
+      expect(network.ssid, 'ECJTU-Stu');
+      expect(network.ssidVisible, isTrue);
     });
 
-    test('P7: 空串与异常统一归一为 null', () async {
+    test('C2: WiFi 但读不到名字时 ssidVisible=false，type 仍是 wifi', () async {
+      messenger.setMockMethodCallHandler(methodChannel, (MethodCall call) async {
+        return <String, Object?>{
+          'type': 'wifi',
+          'ssid': '',
+          'ssidVisible': false,
+        };
+      });
       final service = NlmService(supportedPlatform: true);
       addTearDown(service.dispose);
 
-      messenger.setMockMethodCallHandler(methodChannel, (MethodCall call) async {
-        return <String, String>{'ssid': ''};
-      });
+      final network = await service.currentNetwork();
+      expect(network!.type, NetworkType.wifi);
+      expect(network.hasSsid, isFalse);
+      expect(network.ssidVisible, isFalse);
       expect(await service.getCurrentSsid(), isNull);
+    });
 
+    test('C3: 通道不可用（老实现）返回 null，交给调用方兜底', () async {
       messenger.setMockMethodCallHandler(methodChannel, (MethodCall call) async {
-        throw PlatformException(code: 'unavailable');
+        throw MissingPluginException('no impl');
       });
-      expect(await service.getCurrentSsid(), isNull);
+      final service = NlmService(supportedPlatform: true);
+      addTearDown(service.dispose);
+
+      expect(await service.currentNetwork(), isNull);
+    });
+
+    test('C4: 只有 getCurrentSsid 的老实现仍能取到 SSID', () async {
+      messenger.setMockMethodCallHandler(methodChannel, (MethodCall call) async {
+        if (call.method == 'getCurrentNetwork') {
+          throw MissingPluginException('no impl');
+        }
+        return <String, String>{'ssid': 'ECJTU-Lib'};
+      });
+      final service = NlmService(supportedPlatform: true);
+      addTearDown(service.dispose);
+
+      expect(await service.getCurrentSsid(), 'ECJTU-Lib');
+    });
+  });
+
+  group('WifiProbe 单源', () {
+    test('W1: 通道可用且读不到 SSID 时不回退插件（避免双源）', () async {
+      messenger.setMockMethodCallHandler(methodChannel, (MethodCall call) async {
+        return <String, Object?>{
+          'type': 'wifi',
+          'ssid': '',
+          'ssidVisible': false,
+        };
+      });
+      final service = NlmService(supportedPlatform: true);
+      addTearDown(service.dispose);
+      final probe = WifiProbe(nlmService: service, androidOverride: true);
+
+      expect(await probe.currentSsid(), isNull);
+      expect(pluginCalls, 0, reason: '插件若被调用，就会出现第二个 SSID 来源');
+    });
+
+    test('W2: 通道不可用时才回退插件', () async {
+      messenger.setMockMethodCallHandler(methodChannel, (MethodCall call) async {
+        throw MissingPluginException('no impl');
+      });
+      final service = NlmService(supportedPlatform: true);
+      addTearDown(service.dispose);
+      final probe = WifiProbe(nlmService: service, androidOverride: true);
+
+      expect(await probe.currentSsid(), 'PLUGIN-SSID');
+      expect(pluginCalls, greaterThan(0));
+    });
+
+    test('W3: 蜂窝网络不返回 SSID', () async {
+      messenger.setMockMethodCallHandler(methodChannel, (MethodCall call) async {
+        return <String, Object?>{
+          'type': 'cellular',
+          'ssid': '',
+          'ssidVisible': false,
+        };
+      });
+      final service = NlmService(supportedPlatform: true);
+      addTearDown(service.dispose);
+      final probe = WifiProbe(nlmService: service, androidOverride: true);
+
+      expect(await probe.currentSsid(), isNull);
     });
   });
 }
