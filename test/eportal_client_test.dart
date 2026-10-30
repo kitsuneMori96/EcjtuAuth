@@ -178,6 +178,28 @@ void main() {
       );
     });
 
+    test('ClientException 文本含 refused → refused', () async {
+      final c = clientWith(
+        (req) async =>
+            throw http.ClientException('Connection refused (errno = 111)'),
+      );
+      await expectLater(
+        c.fetchPortalPage(),
+        throwsPortalFailure(PortalFailure.refused),
+      );
+    });
+
+    test('ClientException 无 refused 文本 → unreachable（非 unknown）', () async {
+      final c = clientWith(
+        (req) async => throw http.ClientException('Connection closed before '
+            'full header was received'),
+      );
+      await expectLater(
+        c.fetchPortalPage(),
+        throwsPortalFailure(PortalFailure.unreachable),
+      );
+    });
+
     test('HTTP 500 → httpStatus（不重试）', () async {
       var calls = 0;
       final c = clientWith((req) async {

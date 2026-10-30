@@ -620,7 +620,7 @@ class AutoConnectService extends ChangeNotifier {
   void _onNetworkEvent(NlmNetworkEvent event) {
     if (_disposed) return;
     final previousSsid = _lastSsid;
-    log('NLM 事件: ${event.event} (ssid=${event.ssid})');
+    log('NLM 事件: ${event.event} (type=${event.type.name}, ssid=${event.ssid})');
     if (event.ssid.isNotEmpty) {
       _lastSsid = event.ssid.trim().replaceAll('"', '');
     }

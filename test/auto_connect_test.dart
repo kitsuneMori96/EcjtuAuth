@@ -11,6 +11,7 @@ import 'package:ecjtu_auth/platform/nlm_service.dart';
 import 'package:ecjtu_auth/services/auto_connect.dart';
 import 'package:ecjtu_auth/services/credential_store.dart';
 import 'package:ecjtu_auth/services/settings_store.dart';
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -64,8 +65,13 @@ class _FakeNlm extends NlmService {
   @override
   Future<CurrentNetwork?> currentNetwork() async => network;
 
-  void emit(String type, [String ssid = '']) =>
-      _controller.add(NlmNetworkEvent(event: type, ssid: ssid));
+  void emit(
+    String event, [
+    String ssid = '',
+    NetworkType type = NetworkType.unknown,
+  ]) => _controller.add(
+    NlmNetworkEvent(event: event, ssid: ssid, type: type),
+  );
 }
 
 class _FakeCredentials extends CredentialStore {
@@ -105,7 +111,55 @@ Future<AutoConnectService> _makeService({
   return service;
 }
 
+/// fakeAsync 里不能直接 await，只能把微任务推动到结束。
+AutoConnectService _makeServiceSync(
+  FakeAsync async, {
+  required _FakeEportal eportal,
+  AppSettings settings = const AppSettings(),
+  NlmService? nlmService,
+  String? ssid = 'ECJTU-Stu',
+  CampusAccount? account = _testAccount,
+}) {
+  late AutoConnectService service;
+  _makeService(
+    eportal: eportal,
+    settings: settings,
+    nlmService: nlmService,
+    ssid: ssid,
+    account: account,
+  ).then((s) => service = s);
+  async.flushMicrotasks();
+  return service;
+}
+
 const _timeout = PortalException(PortalFailure.timeout, 'GET portal 超时');
+
+/// 自动检查是否应该真的发起 portal 请求：账号缺失或明确的蜂窝/断网都不该发。
+class _Case {
+  const _Case(
+    this.type, {
+    required this.hasAccount,
+    required this.manual,
+    required this.outcome,
+  });
+
+  /// null 表示平台通道不可用（老原生包）。
+  final NetworkType? type;
+  final bool hasAccount;
+  final bool manual;
+  final ConnectOutcome outcome;
+
+  bool get expectsRequest {
+    if (!hasAccount) return false;
+    if (manual) return true;
+    return type != NetworkType.cellular && type != NetworkType.none;
+  }
+
+  @override
+  String toString() =>
+      '${type?.name ?? 'channel-null'} / ${hasAccount ? '有账号' : '无账号'} / '
+      '${manual ? '手动' : '自动'}';
+}
 
 Future<void> _waitUntil(
   bool Function() condition, {
@@ -447,6 +501,209 @@ void main() {
       await Future.delayed(const Duration(milliseconds: 300));
       expect(eportal.fetchCount, fetchesAtStop);
       expect(eportal.loginCount, 3);
+    });
+  });
+
+  group('状态矩阵（网络类型 × 账号 × 入口）', () {
+    const cases = [
+      _Case(
+        NetworkType.wifi,
+        hasAccount: true,
+        manual: false,
+        outcome: ConnectOutcome.success,
+      ),
+      _Case(
+        NetworkType.wifi,
+        hasAccount: true,
+        manual: true,
+        outcome: ConnectOutcome.success,
+      ),
+      _Case(
+        NetworkType.ethernet,
+        hasAccount: true,
+        manual: false,
+        outcome: ConnectOutcome.success,
+      ),
+      // unknown = 老原生包（通道无 type），必须保持旧行为：照常认证。
+      _Case(
+        NetworkType.unknown,
+        hasAccount: true,
+        manual: false,
+        outcome: ConnectOutcome.success,
+      ),
+      _Case(
+        null,
+        hasAccount: true,
+        manual: false,
+        outcome: ConnectOutcome.success,
+      ),
+      _Case(
+        NetworkType.cellular,
+        hasAccount: true,
+        manual: false,
+        outcome: ConnectOutcome.notOnCampus,
+      ),
+      _Case(
+        NetworkType.none,
+        hasAccount: true,
+        manual: false,
+        outcome: ConnectOutcome.notOnCampus,
+      ),
+      // 手动一键认证不看网络类型（VPN 场景），蜂窝上也照发。
+      _Case(
+        NetworkType.cellular,
+        hasAccount: true,
+        manual: true,
+        outcome: ConnectOutcome.success,
+      ),
+      _Case(
+        NetworkType.none,
+        hasAccount: true,
+        manual: true,
+        outcome: ConnectOutcome.success,
+      ),
+      _Case(
+        NetworkType.cellular,
+        hasAccount: false,
+        manual: false,
+        outcome: ConnectOutcome.noAccount,
+      ),
+      _Case(
+        NetworkType.wifi,
+        hasAccount: false,
+        manual: true,
+        outcome: ConnectOutcome.noAccount,
+      ),
+    ];
+
+    for (final c in cases) {
+      test('$c → ${c.outcome.name}', () async {
+        final eportal = _FakeEportal(['x' * 100, 'x' * 120]);
+        final nlm = _FakeNlm(
+          c.type == null
+              ? null
+              : CurrentNetwork(type: c.type!, ssid: '', ssidVisible: false),
+        );
+        final service = await _makeService(
+          eportal: eportal,
+          nlmService: nlm,
+          account: c.hasAccount ? _testAccount : null,
+          settings: const AppSettings(offlinePageLength: 100),
+        );
+
+        final outcome = c.manual
+            ? await service.connectNow(source: 'manual')
+            : await service.connectOnce();
+
+        expect(outcome, c.outcome, reason: '$c');
+        expect(
+          eportal.fetchCount,
+          c.expectsRequest ? greaterThan(0) : 0,
+          reason: '$c: portal 请求次数',
+        );
+        expect(
+          eportal.loginCount,
+          c.expectsRequest ? 1 : 0,
+          reason: '$c: 登录次数',
+        );
+        if (c.outcome == ConnectOutcome.notOnCampus) {
+          expect(service.state, NetState.noCampusWifi, reason: '$c');
+        }
+        service.dispose();
+      });
+    }
+  });
+
+  group('退避时序（fakeAsync）', () {
+    const fastSettings = AppSettings(
+      offlinePageLength: 100,
+      baseRetryDelaySec: 10,
+      maxRetryDelaySec: 60,
+    );
+
+    test('10s → 20s → 40s → 60s，第 5 次不可达后停止', () {
+      fakeAsync((async) {
+        final eportal = _FakeEportal([_timeout]);
+        final service = _makeServiceSync(
+          async,
+          eportal: eportal,
+          settings: fastSettings,
+        );
+
+        service.startAutoRetry();
+        async.flushMicrotasks();
+        expect(eportal.fetchCount, 1, reason: '首次检查应立刻发生');
+
+        async.elapse(const Duration(seconds: 9));
+        expect(eportal.fetchCount, 1, reason: '未到 10s 不应重试');
+        async.elapse(const Duration(seconds: 1));
+        expect(eportal.fetchCount, 2);
+
+        async.elapse(const Duration(seconds: 19));
+        expect(eportal.fetchCount, 2, reason: '第二次间隔应为 20s');
+        async.elapse(const Duration(seconds: 1));
+        expect(eportal.fetchCount, 3);
+
+        async.elapse(const Duration(seconds: 39));
+        expect(eportal.fetchCount, 3, reason: '第三次间隔应为 40s');
+        async.elapse(const Duration(seconds: 1));
+        expect(eportal.fetchCount, 4);
+
+        async.elapse(const Duration(seconds: 59));
+        expect(eportal.fetchCount, 4, reason: '第四次间隔封顶 60s');
+        async.elapse(const Duration(seconds: 1));
+        expect(eportal.fetchCount, 5);
+
+        // 第 5 次已达 maxTransportRetries，计时器不再续约
+        async.elapse(const Duration(minutes: 10));
+        expect(eportal.fetchCount, 5);
+        expect(
+          service.logLines.any((line) => line.contains('连续 5 次不可达')),
+          isTrue,
+        );
+        service.dispose();
+      });
+    });
+
+    test('换网事件把退避拉回初始间隔', () {
+      fakeAsync((async) {
+        final eportal = _FakeEportal([_timeout]);
+        final nlm = _FakeNlm(
+          const CurrentNetwork(
+            type: NetworkType.wifi,
+            ssid: '',
+            ssidVisible: false,
+          ),
+        );
+        final service = _makeServiceSync(
+          async,
+          eportal: eportal,
+          nlmService: nlm,
+          settings: fastSettings,
+        );
+
+        service.startAutoRetry();
+        async.flushMicrotasks();
+        async.elapse(const Duration(seconds: 10));
+        expect(eportal.fetchCount, 2);
+        async.elapse(const Duration(seconds: 20));
+        expect(eportal.fetchCount, 3, reason: '此时已进入 20s 档');
+
+        nlm.emit('connected', 'ECJTU-New', NetworkType.wifi);
+        async.flushMicrotasks();
+        expect(eportal.fetchCount, 4, reason: '换网后立即检查一次');
+        expect(
+          service.logLines.any((line) => line.contains('type=wifi')),
+          isTrue,
+          reason: '日志要能看出事件里的网络类型',
+        );
+
+        async.elapse(const Duration(seconds: 9));
+        expect(eportal.fetchCount, 4, reason: '重新从 10s 起步，而不是 40s');
+        async.elapse(const Duration(seconds: 1));
+        expect(eportal.fetchCount, 5);
+        service.dispose();
+      });
     });
   });
 }
