@@ -79,6 +79,9 @@ class AutoConnectService extends ChangeNotifier {
 
   bool get busy => _inFlight != null || _refreshing;
 
+  @visibleForTesting
+  int get authFailStreak => _authFailStreak;
+
   Future<void> loadSettings() async {
     _settingsLoaded = await settingsStore.load();
     _applyConfig();
@@ -536,11 +539,29 @@ class AutoConnectService extends ChangeNotifier {
 
   // ─── 网络事件 ───────────────────────────────────────
 
+  /// 换网后旧的失败累计属于上一个网络，必须清零。
+  ///
+  /// 否则在蜂窝上攒满 3 次，一切回校园网就会被直接判定「连续失败」而停止重试。
+  void _resetFailures(String reason) {
+    _attempt = 0;
+    if (_authFailStreak == 0) return;
+    log('$reason，重置连续失败计数（此前 $_authFailStreak 次）');
+    _authFailStreak = 0;
+  }
+
   void _onNetworkEvent(NlmNetworkEvent event) {
     if (_disposed) return;
+    final previousSsid = _lastSsid;
     log('NLM 事件: ${event.event} (ssid=${event.ssid})');
     if (event.ssid.isNotEmpty) {
       _lastSsid = event.ssid.trim().replaceAll('"', '');
+    }
+    if (event.isDisconnected) {
+      _resetFailures('WiFi 断开');
+    } else if (event.ssid.isNotEmpty &&
+        previousSsid != null &&
+        _lastSsid != previousSsid) {
+      _resetFailures('网络变化 → $_lastSsid');
     }
 
     if (event.isWake) {

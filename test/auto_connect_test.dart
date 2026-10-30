@@ -101,6 +101,17 @@ Future<AutoConnectService> _makeService({
 
 const _timeout = PortalException(PortalFailure.timeout, 'GET portal 超时');
 
+Future<void> _waitUntil(
+  bool Function() condition, {
+  Duration timeout = const Duration(seconds: 6),
+}) async {
+  final sw = Stopwatch()..start();
+  while (!condition()) {
+    if (sw.elapsed > timeout) fail('等待条件超时');
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+}
+
 void main() {
   group('AutoConnectService', () {
     test('已在线时跳过登录', () async {
@@ -272,6 +283,34 @@ void main() {
         isFalse,
         reason: '缺账号重试毫无意义',
       );
+      service.dispose();
+    });
+
+    test('换网事件清零连续失败计数', () async {
+      final eportal = _FakeEportal(['x' * 100]);
+      final nlm = _FakeNlm();
+      final service = await _makeService(
+        eportal: eportal,
+        ssid: '',
+        nlmService: nlm,
+        settings: const AppSettings(
+          offlinePageLength: 100,
+          baseRetryDelaySec: 0,
+          maxRetryDelaySec: 0,
+        ),
+      );
+
+      // 蜂窝上先失败 2 次（ssid 为空）
+      service.startAutoRetry();
+      await _waitUntil(() => service.authFailStreak >= 2);
+      expect(service.authFailStreak, greaterThanOrEqualTo(2));
+
+      // 切回校园网
+      nlm.emit('connected', 'ECJTU-Stu');
+      await pumpEventQueue();
+
+      expect(service.logLines.any((line) => line.contains('重置连续失败计数')), isTrue);
+      expect(service.authFailStreak, lessThan(2));
       service.dispose();
     });
 
