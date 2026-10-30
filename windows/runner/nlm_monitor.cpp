@@ -158,6 +158,19 @@ NlmMonitor::NlmMonitor(flutter::BinaryMessenger* messenger)
           map[flutter::EncodableValue("ssid")] =
               flutter::EncodableValue(GetCurrentSsid());
           result->Success(flutter::EncodableValue(map));
+        } else if (call.method_name() == "getCurrentNetwork") {
+          // 与 Android 侧同结构；Windows 只解析 WLAN，
+          // 因此 type 只会是 wifi / none（有线/蜂窝不单独识别）。
+          auto [connected, ssid] = GetWifiStatus();
+          flutter::EncodableMap map;
+          map[flutter::EncodableValue("type")] = flutter::EncodableValue(
+              std::string(connected ? "wifi" : "none"));
+          map[flutter::EncodableValue("ssid")] =
+              flutter::EncodableValue(ssid);
+          // 已连上 WLAN 但 netsh 读不出名字（极少见）时 true/false 才有区别。
+          map[flutter::EncodableValue("ssidVisible")] =
+              flutter::EncodableValue(connected && !ssid.empty());
+          result->Success(flutter::EncodableValue(map));
         } else {
           result->NotImplemented();
         }
@@ -252,11 +265,19 @@ void NlmMonitor::SendEvent(const std::string& event_type,
   std::lock_guard lock(mutex_);
   if (!event_sink_) return;
 
+  // type 与 Android 侧（MainActivity）保持同一套取值。
+  // NLM 只轮询 WLAN：connected 必然来自 WiFi；disconnected/wake/suspend 归 none，
+  // 避免把「网卡掉了」误当成「还连着 WiFi」。
+  const bool is_wifi = event_type == "connected";
+  const char* type = is_wifi ? "wifi" : "none";
+
   flutter::EncodableMap map;
   map[flutter::EncodableValue("event")] =
       flutter::EncodableValue(event_type);
   map[flutter::EncodableValue("ssid")] =
       flutter::EncodableValue(ssid);
+  map[flutter::EncodableValue("type")] =
+      flutter::EncodableValue(std::string(type));
 
   event_sink_->Success(flutter::EncodableValue(map));
 }

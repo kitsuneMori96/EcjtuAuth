@@ -18,12 +18,17 @@ import io.flutter.plugin.common.MethodChannel
  * 把 Android 的网络状态变化接入与 Windows 相同的通道：
  *
  * - `ecjtu_auth/network_events`（EventChannel）：`connected` / `disconnected`，
- *   载荷 `{"event": ..., "ssid": ...}`，与 NlmMonitor 的 C++ 实现结构一致。
- * - `ecjtu_auth/network_methods`（MethodChannel）：`getCurrentSsid` → `{"ssid": ...}`。
+ *   载荷 `{"event": ..., "ssid": ..., "type": "wifi|cellular|ethernet|none"}`。
+ * - `ecjtu_auth/network_methods`（MethodChannel）：
+ *   `getCurrentNetwork` → `{"type": ..., "ssid": ..., "ssidVisible": bool}`，
+ *   `getCurrentSsid` → `{"ssid": ...}`（旧接口，保留兼容）。
+ *
+ * `type` 取自 [NetworkCapabilities] 的 transport，**不依赖 SSID 是否可读**，
+ * 因此「没有 WiFi」与「有 WiFi 但没定位权限读不到名字」能区分。
  *
  * 使用 [ConnectivityManager.registerDefaultNetworkCallback]（原生 API，不引入第三方依赖），
  * 只关注「默认网络」，避免同时上报多条链路的抖动。API 24 以下不支持该回调，静默降级为
- * 只响应 `getCurrentSsid`。
+ * 只响应查询方法。
  */
 class MainActivity : FlutterActivity() {
     private companion object {
@@ -31,6 +36,12 @@ class MainActivity : FlutterActivity() {
         const val METHOD_CHANNEL = "ecjtu_auth/network_methods"
         const val TAG = "EcjtuAuth"
         const val UNKNOWN_SSID = "<unknown ssid>"
+
+        // 与 Dart 侧 NetworkType 枚举一一对应，不要随意改名。
+        const val NetworkTypeWifi = "wifi"
+        const val NetworkTypeCellular = "cellular"
+        const val NetworkTypeEthernet = "ethernet"
+        const val NetworkTypeNone = "none"
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -65,6 +76,8 @@ class MainActivity : FlutterActivity() {
 
         MethodChannel(messenger, METHOD_CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
+                "getCurrentNetwork" -> result.success(currentNetworkSnapshot())
+                // 兼容旧调用方，字段含义与 getCurrentNetwork 保持一致。
                 "getCurrentSsid" -> result.success(mapOf("ssid" to currentSsid()))
                 else -> result.notImplemented()
             }
@@ -94,13 +107,13 @@ class MainActivity : FlutterActivity() {
 
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
-                emit("connected", currentSsid())
+                emit("connected", currentSsid(), typeOf(network))
             }
 
             override fun onLost(network: Network) {
                 // 默认网络丢失；WiFi → 蜂窝切换时可能与 onAvailable 交错，
                 // 由去重逻辑与 Dart 侧的连接流程兜底。
-                emit("disconnected", null)
+                emit("disconnected", null, NetworkTypeNone)
             }
 
             override fun onCapabilitiesChanged(
@@ -110,7 +123,11 @@ class MainActivity : FlutterActivity() {
                 // 换 SSID / 认证状态变化都会走到这里：SSID 解析成功后补发一次，
                 // 让 Dart 侧拿到具体网络名（同 AP 漫游时 SSID 不变，会被去重吞掉）。
                 if (networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
-                    emit("connected", currentSsid())
+                    emit(
+                        "connected",
+                        currentSsid(),
+                        typeOfCapabilities(networkCapabilities),
+                    )
                 }
             }
         }
@@ -136,27 +153,62 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun emitCurrentState() {
-        val manager = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-        val active = manager?.activeNetwork
-        val capabilities = if (active != null) manager.getNetworkCapabilities(active) else null
-        val connected = capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
-        if (connected) {
-            emit("connected", currentSsid())
+        val snapshot = currentNetworkSnapshot()
+        val type = snapshot["type"] as String
+        if (type == NetworkTypeNone) {
+            emit("disconnected", null, NetworkTypeNone)
         } else {
-            emit("disconnected", null)
+            emit("connected", snapshot["ssid"] as String?, type)
         }
     }
 
     /** 事件必须回到主线程投递：默认回调运行在 ConnectivityThread 上。 */
-    private fun emit(event: String, ssid: String?) {
-        val payload = mapOf("event" to event, "ssid" to (ssid ?: ""))
-        val key = "$event|${ssid ?: ""}"
+    private fun emit(event: String, ssid: String?, type: String) {
+        val payload = mapOf(
+            "event" to event,
+            "ssid" to (ssid ?: ""),
+            "type" to type,
+        )
+        // type 参与去重：蜂窝 ↔ WiFi 切换时即使 ssid 都为空也要各发一次。
+        val key = "$event|${ssid ?: ""}|$type"
         mainHandler.post {
             val sink = eventSink ?: return@post
             if (key == lastEmitted) return@post
             lastEmitted = key
             sink.success(payload)
         }
+    }
+
+    /**
+     * 当前网络快照。`type` 来自 [NetworkCapabilities]，**不依赖 SSID 是否可读**，
+     * 因此「没有 WiFi」和「有 WiFi 但读不到名字」可以区分开：
+     * 后者 `type=wifi` 且 `ssidVisible=false`。
+     */
+    private fun currentNetworkSnapshot(): Map<String, Any?> {
+        val manager = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        val capabilities = manager?.activeNetwork?.let { manager.getNetworkCapabilities(it) }
+        val type = if (capabilities == null) NetworkTypeNone else typeOfCapabilities(capabilities)
+        val ssid = if (type == NetworkTypeWifi) currentSsid() else null
+        return mapOf(
+            "type" to type,
+            "ssid" to (ssid ?: ""),
+            "ssidVisible" to (ssid != null),
+        )
+    }
+
+    private fun typeOf(network: Network): String {
+        val manager = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            ?: return NetworkTypeNone
+        val capabilities = manager.getNetworkCapabilities(network) ?: return NetworkTypeNone
+        return typeOfCapabilities(capabilities)
+    }
+
+    private fun typeOfCapabilities(capabilities: NetworkCapabilities?): String = when {
+        capabilities == null -> NetworkTypeNone
+        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> NetworkTypeWifi
+        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> NetworkTypeCellular
+        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> NetworkTypeEthernet
+        else -> NetworkTypeNone
     }
 
     // endregion

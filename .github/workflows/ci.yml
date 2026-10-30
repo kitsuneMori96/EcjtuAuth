@@ -99,7 +99,8 @@ jobs:
           keyPassword=${ANDROID_KEY_PASSWORD}
           EOF
 
-      # PR 无签名 Secrets 时 build.gradle.kts 会回退 debug 签名并告警。
+      # 仓库已配置签名 Secrets，PR 产物与正式包同签名（可用 apksigner 核对 CN=EcjtuAuth）。
+      # 仅当 Secrets 缺失时才回退 debug 签名，那条路径只用于 fork/本地验证。
       - name: Build APK
         run: flutter build apk --release
 
