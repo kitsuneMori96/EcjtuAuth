@@ -6,9 +6,16 @@ import '../services/credential_store.dart';
 
 /// 账户配置页：学号 / 密码 / 运营商，保存到加密存储。
 class AccountScreen extends StatefulWidget {
-  const AccountScreen({super.key, required this.credentialStore});
+  const AccountScreen({
+    super.key,
+    required this.credentialStore,
+    this.onSaved,
+  });
 
   final CredentialStore credentialStore;
+
+  /// 保存成功后触发一次认证：缺账号时自动重试已停止，没人重新拉起。
+  final VoidCallback? onSaved;
 
   @override
   State<AccountScreen> createState() => _AccountScreenState();
@@ -59,6 +66,7 @@ class _AccountScreenState extends State<AccountScreen> {
     );
     if (!mounted) return;
     FocusScope.of(context).unfocus();
+    widget.onSaved?.call();
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('账号信息已加密保存'), behavior: SnackBarBehavior.floating),
     );

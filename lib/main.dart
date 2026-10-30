@@ -125,7 +125,10 @@ class _HomeShellState extends State<HomeShell> {
   Widget build(BuildContext context) {
     final pages = [
       HomeScreen(service: widget.service),
-      AccountScreen(credentialStore: _store),
+      AccountScreen(
+        credentialStore: _store,
+        onSaved: () => widget.service.connectNow(source: 'account-saved'),
+      ),
       SettingsScreen(service: widget.service),
     ];
     return Scaffold(
