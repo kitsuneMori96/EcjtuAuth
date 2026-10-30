@@ -158,6 +158,19 @@ NlmMonitor::NlmMonitor(flutter::BinaryMessenger* messenger)
           map[flutter::EncodableValue("ssid")] =
               flutter::EncodableValue(GetCurrentSsid());
           result->Success(flutter::EncodableValue(map));
+        } else if (call.method_name() == "getCurrentNetwork") {
+          // 与 Android 侧同结构；Windows 只解析 WLAN，
+          // 因此 type 只会是 wifi / none（有线/蜂窝不单独识别）。
+          auto [connected, ssid] = GetWifiStatus();
+          flutter::EncodableMap map;
+          map[flutter::EncodableValue("type")] = flutter::EncodableValue(
+              std::string(connected ? "wifi" : "none"));
+          map[flutter::EncodableValue("ssid")] =
+              flutter::EncodableValue(ssid);
+          // 已连上 WLAN 但 netsh 读不出名字（极少见）时 true/false 才有区别。
+          map[flutter::EncodableValue("ssidVisible")] =
+              flutter::EncodableValue(connected && !ssid.empty());
+          result->Success(flutter::EncodableValue(map));
         } else {
           result->NotImplemented();
         }
